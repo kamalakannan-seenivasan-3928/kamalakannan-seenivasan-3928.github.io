@@ -1,0 +1,177 @@
+/* ============================================================
+   Theme tokens — every visual decision goes through a CSS var.
+   Switch theme by setting <html data-theme="light|dark|night|custom">.
+   To add a brand theme, copy the [data-theme="custom"] block
+   and override any tokens you need.
+   ============================================================ */
+
+:root,
+[data-theme="light"] {
+  /* Surface & ink */
+  --bg:           #FAF9F6;
+  --surface:      #FFFFFF;
+  --surface-2:    #F4F2EC;
+  --surface-3:    #EDEAE0;
+  --text:         #1F1E1B;
+  --muted:        #6B6A65;
+  --hint:         #8E8C86;
+
+  /* Borders */
+  --border:       rgba(0,0,0,0.10);
+  --border-2:     rgba(0,0,0,0.18);
+
+  /* Status ramps — bg + text + mid (used in pills, dots, charts) */
+  --info-bg:      #E6F1FB;
+  --info:         #0C447C;
+  --info-mid:     #378ADD;
+
+  --ok-bg:        #E1F5EE;
+  --ok:           #085041;
+  --ok-mid:       #1D9E75;
+
+  --warn-bg:      #FAEEDA;
+  --warn:         #854F0B;
+  --warn-mid:     #EF9F27;
+
+  --err-bg:       #FCEBEB;
+  --err:          #791F1F;
+  --err-mid:      #E24B4A;
+
+  --susp-bg:      #EEEDFE;
+  --susp:         #3C3489;
+  --susp-mid:     #7F77DD;
+
+  /* Accent / links */
+  --accent:       #185FA5;
+  --link:         #185FA5;
+  --link-hover:   #0C447C;
+
+  /* Shape */
+  --radius-sm:    4px;
+  --radius-md:    8px;
+  --radius-lg:    12px;
+  --radius-pill:  999px;
+
+  /* Type */
+  --font-sans:    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:    ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Focus ring */
+  --focus-ring:   0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
+
+  color-scheme: light;
+}
+
+/* ============================================================
+   Dark — soft, paper-feeling dark
+   ============================================================ */
+[data-theme="dark"] {
+  --bg:           #1B1B19;
+  --surface:      #242422;
+  --surface-2:    #2C2C2A;
+  --surface-3:    #34332F;
+  --text:         #F5F4EE;
+  --muted:        #A9A8A2;
+  --hint:         #807F79;
+
+  --border:       rgba(255,255,255,0.10);
+  --border-2:     rgba(255,255,255,0.20);
+
+  --info-bg:      #0C2A4A;
+  --info:         #B5D4F4;
+  --info-mid:     #378ADD;
+
+  --ok-bg:        #0F2F25;
+  --ok:           #9FE1CB;
+  --ok-mid:       #1D9E75;
+
+  --warn-bg:      #3A2810;
+  --warn:         #FAC775;
+  --warn-mid:     #EF9F27;
+
+  --err-bg:       #3A1212;
+  --err:          #F7C1C1;
+  --err-mid:      #E24B4A;
+
+  --susp-bg:      #221F40;
+  --susp:         #CECBF6;
+  --susp-mid:     #7F77DD;
+
+  --accent:       #85B7EB;
+  --link:         #85B7EB;
+  --link-hover:   #B5D4F4;
+
+  color-scheme: dark;
+}
+
+/* ============================================================
+   Night — true black, OLED-friendly, deep blue accents
+   ============================================================ */
+[data-theme="night"] {
+  --bg:           #000000;
+  --surface:      #0A0A0E;
+  --surface-2:    #14141A;
+  --surface-3:    #1E1E26;
+  --text:         #E8E8F0;
+  --muted:        #8888A0;
+  --hint:         #555570;
+
+  --border:       rgba(255,255,255,0.08);
+  --border-2:     rgba(255,255,255,0.16);
+
+  --info-bg:      #0A1A30;
+  --info:         #85B7EB;
+  --info-mid:     #4D8FD9;
+
+  --ok-bg:        #0A1F1A;
+  --ok:           #5DCAA5;
+  --ok-mid:       #1D9E75;
+
+  --warn-bg:      #2A1F08;
+  --warn:         #EF9F27;
+  --warn-mid:     #BA7517;
+
+  --err-bg:       #2A0A0A;
+  --err:          #F09595;
+  --err-mid:      #C73838;
+
+  --susp-bg:      #1A1738;
+  --susp:         #AFA9EC;
+  --susp-mid:     #7F77DD;
+
+  --accent:       #4D8FD9;
+  --link:         #6BA4E6;
+  --link-hover:   #85B7EB;
+
+  color-scheme: dark;
+}
+
+/* ============================================================
+   Custom — brand template. Override any tokens here.
+   Activate via <html data-theme="custom">.
+   ============================================================ */
+[data-theme="custom"] {
+  /* Example brand: warm sand background, plum accent */
+  --bg:         #F2EEE5;
+  --surface:    #FBF8F1;
+  --surface-2:  #ECE5D6;
+  --surface-3:  #E2D9C5;
+  --text:       #2A2118;
+  --muted:      #6F6457;
+  --hint:       #998E7E;
+
+  --border:     rgba(74,40,20,0.12);
+  --border-2:   rgba(74,40,20,0.22);
+
+  --accent:     #6E2F8E;
+  --link:       #6E2F8E;
+  --link-hover: #4B1B66;
+
+  --info-mid:   #4D8FD9;
+  --ok-mid:     #2D8C66;
+  --warn-mid:   #C97A1A;
+  --err-mid:    #C73838;
+  --susp-mid:   #6E2F8E;
+
+  color-scheme: light;
+}

@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deluge · Non-blocking delete observability</title>
+  <link rel="stylesheet" href="css/theme.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/views.css" />
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <div>
+      <h1>Deluge · Non-blocking delete</h1>
+      <div class="sub">
+        Auto-batched <code>deleteRecords()</code> over 100 rows · adaptive batch ratio
+        · last refreshed <span id="lastRefreshed">just now</span>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <span class="pill live pill-lg">● Live</span>
+
+      <!-- Theme switcher -->
+      <div class="theme-switch" role="radiogroup" aria-label="Theme">
+        <button class="theme-btn active" data-theme-set="light"  aria-label="Light theme" title="Light">☀</button>
+        <button class="theme-btn"        data-theme-set="dark"   aria-label="Dark theme"  title="Dark">◐</button>
+        <button class="theme-btn"        data-theme-set="night"  aria-label="Night theme" title="Night">●</button>
+        <button class="theme-btn"        data-theme-set="custom" aria-label="Custom theme" title="Custom">★</button>
+      </div>
+
+      <!-- Refresh -->
+      <button id="btnRefresh" class="btn-icon" title="Refresh data" aria-label="Refresh">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12a9 9 0 1 1-3.5-7.1"/><path d="M21 4v5h-5"/>
+        </svg>
+      </button>
+
+      <!-- View tabs -->
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-view="quick"  role="tab">Quick view</button>
+        <button class="tab"        data-view="detail" role="tab">Detailed view</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Filter bar -->
+  <section class="filters" id="filterBar">
+    <select data-filter="app">
+      <option value="">All applications</option>
+    </select>
+    <select data-filter="form">
+      <option value="">All forms</option>
+    </select>
+    <select data-filter="wf">
+      <option value="">All workflows</option>
+    </select>
+    <select data-filter="status">
+      <option value="">All statuses</option>
+      <option>Running</option>
+      <option>Queued</option>
+      <option>Suspended</option>
+      <option>Completed</option>
+      <option>Failed</option>
+    </select>
+    <select data-filter="user">
+      <option value="">All users</option>
+    </select>
+    <select data-filter="time">
+      <option value="24h">Last 24h</option>
+      <option value="7d">Last 7d</option>
+      <option value="30d">Last 30d</option>
+    </select>
+    <input type="search" data-filter="q" placeholder="Search ID, form, user…" />
+    <button id="btnClearFilters" class="btn-quiet">Clear</button>
+  </section>
+
+  <!-- ============== QUICK VIEW ============== -->
+  <section class="view active" id="view-quick" role="tabpanel">
+
+    <div class="kpi-strip" id="kpiStrip"></div>
+
+    <div class="row-between">
+      <div class="section-title">
+        Active &amp; recent executions
+        <span class="sub" id="quickCount"></span>
+      </div>
+      <div class="row">
+        <button class="btn-quiet" id="btnBulkSuspend">Bulk suspend</button>
+        <button class="btn-quiet" id="btnExportCsv">Export CSV ↗</button>
+      </div>
+    </div>
+
+    <div id="statusChips" class="status-chips" role="tablist" aria-label="Filter by status"></div>
+
+    <div id="quickGrid" class="quick-grid"></div>
+    <div id="quickEmpty" class="empty-state hidden">No executions match the current filters.</div>
+
+    <div class="card">
+      <div class="row-between mb-8">
+        <div class="section-title">Live event tail</div>
+        <div class="row">
+          <button class="btn-quiet" id="btnTailPause">Pause</button>
+          <button class="btn-quiet" id="btnTailErrors">Errors only</button>
+        </div>
+      </div>
+      <div id="tail" class="tail" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- ============== DETAILED VIEW ============== -->
+  <section class="view" id="view-detail" role="tabpanel">
+
+    <!-- Searchable execution picker -->
+    <div class="card pad-sm">
+      <div class="row-between">
+        <div class="row" style="flex: 1; min-width: 0;">
+          <span class="sub">Execution</span>
+          <div class="search-picker" id="execPicker" data-placeholder="Search execution…"></div>
+          <span id="dStatus" class="pill stat-running">Running</span>
+        </div>
+        <div class="row">
+          <button class="btn-quiet" id="btnPrevExec">‹ Prev</button>
+          <button class="btn-quiet" id="btnNextExec">Next ›</button>
+          <button class="btn-quiet" data-view-jump="quick">Back to quick</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Header -->
+    <div class="card">
+      <div class="exec-header">
+        <div>
+          <div class="sub">Execution detail</div>
+          <a id="dId" class="link link-mono" href="#" data-link-type="execution">EXEC-9F3A21B7</a>
+          <div id="dMeta" class="sub mt-2"></div>
+          <div class="sub mt-2">
+            Function: <span class="mono" id="dFunc">customers.purge_old_leads()</span>
+            · line <span id="dLine">47</span>
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn-primary" id="btnSuspendExec">Suspend execution</button>
+          <button class="btn-quiet" id="btnSuspendGroup">Suspend group</button>
+          <button class="btn-quiet" id="btnRetryFailed">Retry failed</button>
+          <a class="btn-quiet" id="lnkOpenCode" href="#" target="_blank" rel="noopener">View Deluge code ↗</a>
+        </div>
+      </div>
+
+      <div class="metrics-6 mt-14" id="dMetrics"></div>
+    </div>
+
+    <!-- Throughput + queue strip -->
+    <div class="grid-2-1">
+      <div class="card">
+        <div class="row-between mb-8">
+          <div class="section-title">Throughput &amp; adaptive batch size</div>
+          <div class="sub">last 30 minutes</div>
+        </div>
+        <div class="chart-wrap"><canvas id="cThru" role="img" aria-label="Throughput and batch size over time">Throughput chart.</canvas></div>
+      </div>
+      <div class="card">
+        <div class="row-between mb-8">
+          <div class="section-title">Queue order · <span id="batchTotal">0</span> batches</div>
+          <div class="sub">left → right = order</div>
+        </div>
+        <div id="batchStrip" class="strip"></div>
+        <div class="legend">
+          <span><i class="lg-done"></i>Succeeded</span>
+          <span><i class="lg-run"></i>Running</span>
+          <span><i class="lg-queue"></i>Queued</span>
+          <span><i class="lg-partial"></i>Partial</span>
+          <span><i class="lg-fail"></i>Failed</span>
+          <span><i class="lg-suspend"></i>Suspended</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Batch list + detail -->
+    <div class="grid-2 detail-split">
+      <div class="card">
+        <div class="row-between mb-8">
+          <div class="section-title">Batches</div>
+          <select id="batchFilter" class="sm">
+            <option value="all">All</option>
+            <option value="failed">Failed only</option>
+            <option value="suspended">Suspended</option>
+            <option value="running">Running</option>
+          </select>
+        </div>
+        <div id="batchRail" class="batch-rail"></div>
+      </div>
+
+      <div class="card">
+        <div class="row-between mb-8">
+          <div class="section-title">Batch <span id="bId" class="mono">B-0001</span></div>
+          <div class="row">
+            <button class="btn-quiet">Retry batch</button>
+            <button class="btn-quiet">Suspend batch</button>
+            <button class="btn-quiet">Skip &amp; continue</button>
+            <button class="btn-quiet">Download log ↗</button>
+          </div>
+        </div>
+
+        <div class="grid-3 mb-12" id="bMeta"></div>
+
+        <pre id="bLog" class="log"></pre>
+
+        <div class="mt-14">
+          <div class="section-title mb-8">Failed records (<span id="bFailCount">0</span>)</div>
+          <table class="t" id="bFailTbl">
+            <thead><tr><th style="width:120px;">Record</th><th>Reason</th><th style="width:100px;">Category</th><th style="width:130px;">Action</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit + dependencies -->
+    <div class="grid-2 cols-equal">
+      <div class="card">
+        <div class="section-title mb-10">Audit timeline</div>
+        <div class="timeline" id="auditTl"></div>
+      </div>
+      <div class="card">
+        <div class="section-title mb-10">Dependencies &amp; impact</div>
+        <table class="t kv" id="depTbl"></table>
+        <div class="row mt-10">
+          <a class="btn-quiet" id="lnkOpenForm" href="#" target="_blank" rel="noopener">Open form in editor ↗</a>
+          <button class="btn-quiet">Show as restore candidates</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    Reference: <a class="link" href="https://www.zoho.com/deluge/help/data-access/delete-records.html" target="_blank" rel="noopener">zoho.com/deluge/help/data-access/delete-records.html</a>
+    · mockup data · v3 modular
+  </footer>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast" aria-live="polite"></div>
+
+<!-- Vendor -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+
+<!-- App modules — order matters -->
+<script src="js/data.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/links.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/searchPicker.js"></script>
+<script src="js/filters.js"></script>
+<script src="js/quickView.js"></script>
+<script src="js/detailView.js"></script>
+<script src="js/liveTail.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
