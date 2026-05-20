@@ -25,6 +25,10 @@
       <div class="topbar-actions">
         <!-- Theme switcher -->
         <div id="themePicker"></div>
+        <!-- Font family picker -->
+        <div id="fontPicker"></div>
+        <!-- UI density picker -->
+        <div id="densityToggle"></div>
         <button class="btn btn-primary" id="newPipelineBtn">
           <svg class="icon-svg" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           New Pipeline
@@ -51,7 +55,7 @@
         <div class="audit-section">
           <div class="audit-header">
             <span>Audit Feed</span>
-            <span style="font-size:9px;font-weight:400;color:var(--text-faint)" id="auditCount"></span>
+            <span style="font-size:var(--fs-3xs);font-weight:400;color:var(--text-faint)" id="auditCount"></span>
           </div>
           <div class="audit-filters" id="auditFilters"></div>
           <div class="audit-feed" id="auditFeed"></div>
@@ -103,6 +107,8 @@ const BUILDER_URL = './pages/builder.html';
 // Init
 PipelineStore.seedIfEmpty();
 initThemeSwitcher();
+initFontFamilyPicker();
+initDensityToggle();
 
 const TRIGGERS = [
   { type: 'webhook',   icon: '⌁', name: 'Webhook',       desc: 'HTTP endpoint callback' },
@@ -161,8 +167,8 @@ function renderPipelineList() {
           <span class="status-dot ${p.status}" title="${p.status}"></span>
         </div>
         <div class="pl-actions">
-          <button class="btn" style="padding:4px 10px;font-size:10px" data-action="open" data-id="${p.id}">Open</button>
-          <button class="btn btn-danger" style="padding:4px 10px;font-size:10px" data-action="delete" data-id="${p.id}">Delete</button>
+          <button class="btn" style="padding:4px 10px;font-size:var(--fs-2xs)" data-action="open" data-id="${p.id}">Open</button>
+          <button class="btn btn-danger" style="padding:4px 10px;font-size:var(--fs-2xs)" data-action="delete" data-id="${p.id}">Delete</button>
         </div>
       </div>
     </div>
@@ -496,9 +502,9 @@ function renderTriggerConfig() {
       panel.innerHTML = `
         <div class="field-group">
           <label class="field-label">cURL Command (auto-generated)</label>
-          <textarea class="field-textarea" style="min-height:90px;font-size:11px;color:var(--accent)" readonly>${curlCmd}</textarea>
+          <textarea class="field-textarea" style="min-height:90px;font-size:var(--fs-xs);color:var(--accent)" readonly>${curlCmd}</textarea>
         </div>
-        <p style="font-size:10px;color:var(--text-dim);margin-top:6px">
+        <p style="font-size:var(--fs-2xs);color:var(--text-dim);margin-top:6px">
           Use this command to trigger the pipeline on-demand. The bearer token is unique to this pipeline.
         </p>
       `;

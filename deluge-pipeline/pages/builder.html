@@ -57,6 +57,24 @@
         <!-- Theme switcher (auto-built by initThemeSwitcher) -->
         <div id="themePicker"></div>
 
+        <!-- Font family picker -->
+        <div id="fontPicker"></div>
+
+        <!-- UI density picker -->
+        <div id="densityToggle"></div>
+
+        <span class="dirty-badge" id="dirtyBadge" title="Pipeline state"></span>
+
+        <button class="btn" id="exportJsonBtn" title="Export pipeline as JSON">
+          <svg class="icon-svg" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export
+        </button>
+        <button class="btn" id="fullscreenBtn" title="Toggle browser fullscreen (F11)">
+          <svg class="icon-svg" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+        </button>
+        <button class="btn" id="zenBtn" title="Zen mode — distraction-free + fullscreen (Esc to exit)">
+          <svg class="icon-svg" viewBox="0 0 24 24"><path d="M12 2C9 6 9 10 12 12c3 2 3 6 0 10"/><path d="M5 12c2-2 5-2 7 0s5 2 7 0"/></svg>
+        </button>
         <button class="btn" id="resetBtn">
           <svg class="icon-svg" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
           Reset
@@ -72,12 +90,17 @@
     <div class="main" id="mainGrid">
 
       <!-- LEFT PANEL: Variables + Task templates -->
-      <aside class="panel">
+      <aside class="panel" id="leftPanel">
         <div class="panel-header">
           <span class="panel-title">Variables</span>
-          <button class="btn-icon" id="addVarBtn" title="Add variable">
-            <svg class="icon-svg" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          </button>
+          <div style="display:flex; gap:4px; align-items:center;">
+            <button class="btn-icon" id="addVarBtn" title="Add variable">
+              <svg class="icon-svg" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+            <button class="btn-icon panel-collapse-btn" data-collapse="left" title="Collapse panel">
+              <svg class="icon-svg" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+          </div>
         </div>
         <div class="panel-body">
           <div class="var-list" id="varList"></div>
@@ -89,6 +112,7 @@
           <div class="section-label">Task Templates</div>
           <div id="templateList"></div>
         </div>
+        <div class="panel-strip" id="leftPanelStrip"></div>
       </aside>
 
       <!-- Resize handle BETWEEN left panel and center -->
@@ -104,10 +128,16 @@
             <span class="stat-pill"><b id="totalDuration">0ms</b> total</span>
           </div>
           <div style="display: flex; gap: 8px; align-items: center;">
-            <span style="font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px;">Status:</span>
+            <button class="zen-run" id="zenRunBtn" title="Run pipeline">
+              <svg class="icon-svg" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </button>
+            <button class="zen-exit" id="zenExitBtn" title="Exit Zen mode (Esc)">
+              <svg class="icon-svg" viewBox="0 0 24 24"><path d="M9 3H5a2 2 0 0 0-2 2v4M15 3h4a2 2 0 0 1 2 2v4M9 21H5a2 2 0 0 1-2-2v-4M15 21h4a2 2 0 0 0 2-2v-4"/></svg>
+            </button>
+            <span style="font-size: var(--fs-2xs); color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px;">Status:</span>
             <span class="stat-pill" id="pipelineStatus">
               <span class="stage-status-dot idle" style="width:6px;height:6px;"></span>
-              <span style="font-size: 10px;">IDLE</span>
+              <span style="font-size: var(--fs-2xs);">IDLE</span>
             </span>
           </div>
         </div>
@@ -145,11 +175,16 @@
       <div class="resize-handle" id="resizeHandle" style="right: var(--insp-w, 420px);"></div>
 
       <!-- RIGHT PANEL: Inspector -->
-      <aside class="panel">
+      <aside class="panel" id="rightPanel">
         <div class="inspector-tabs" id="inspectorTabs">
           <div class="insp-tab active" data-tab="code">Code</div>
           <div class="insp-tab" data-tab="config">Config</div>
           <div class="insp-tab" data-tab="io">I/O</div>
+          <div style="margin-left:auto; display:flex; align-items:center;">
+            <button class="btn-icon panel-collapse-btn" data-collapse="right" title="Collapse panel">
+              <svg class="icon-svg" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          </div>
         </div>
         <div class="panel-body" id="inspectorBody">
           <div class="empty-inspector">
@@ -157,10 +192,15 @@
             <div class="text">Select a stage to configure<br/>its handlers, code & I/O.</div>
           </div>
         </div>
+        <div class="panel-strip" id="rightPanelStrip"></div>
       </aside>
 
     </div>
   </div>
+
+  <!-- Edge-panel trigger + backdrop (zen mode only) -->
+  <div class="edge-backdrop" id="edgeBackdrop"></div>
+  <div class="edge-handle" id="edgeHandle" title="Open inspector"></div>
 
   <!-- Add Stage Modal -->
   <div class="modal-overlay" id="addStageModal">
@@ -522,6 +562,16 @@ function stageCardEl(s, idx) {
   `;
 
   card.addEventListener('click', () => selectStage(s.id));
+  card.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    state.selectedStageId = s.id;
+    // Open the dedicated fullscreen Monaco editor directly for the Task block
+    if (typeof openFullscreenEditor === 'function') {
+      openFullscreenEditor(s, 'task');
+    } else {
+      selectStage(s.id, { tab: 'code', block: 'task' });
+    }
+  });
   return card;
 }
 
@@ -589,7 +639,7 @@ function renderInspector() {
         <div class="field-group">
           <label class="field-label">Max Retries on Task Failure <span style="color:var(--text-faint);font-weight:400">(0–5)</span></label>
           <input class="field-input" id="cfgMaxRetries" type="number" min="0" max="5" step="1" value="${Number(stage.maxRetries || 0)}"/>
-          <div class="hint" style="font-size:11px;color:var(--text-faint);margin-top:4px">Only the <b>Task</b> block is retried. Pre/Post handlers run once.</div>
+          <div class="hint" style="font-size:var(--fs-xs);color:var(--text-faint);margin-top:4px">Only the <b>Task</b> block is retried. Pre/Post handlers run once.</div>
         </div>
         <div style="display:flex; gap:8px; margin-top: 16px;">
           <button class="btn btn-danger" id="delStageBtn" style="flex:1">Delete Stage</button>
@@ -688,17 +738,17 @@ function accordionHtml(stage, kind, title, tag, isOpen, enabled, toggleable) {
               <div class="context-info-row">
                 <span class="context-info-key">ctx.input</span>
                 <span class="context-info-type">map</span>
-                <span style="color:var(--text-dim);font-size:9px">Output from previous stage</span>
+                <span style="color:var(--text-dim);font-size:var(--fs-3xs)">Output from previous stage</span>
               </div>
               <div class="context-info-row">
                 <span class="context-info-key">ctx.vars</span>
                 <span class="context-info-type">map</span>
-                <span style="color:var(--text-dim);font-size:9px">Pipeline variables</span>
+                <span style="color:var(--text-dim);font-size:var(--fs-3xs)">Pipeline variables</span>
               </div>
               <div class="context-info-row">
                 <span class="context-info-key">ctx.previous</span>
                 <span class="context-info-type">map</span>
-                <span style="color:var(--text-dim);font-size:9px">Previous stage metadata</span>
+                <span style="color:var(--text-dim);font-size:var(--fs-3xs)">Previous stage metadata</span>
               </div>
             </div>
           </div>
@@ -772,7 +822,7 @@ function renderIO(stage) {
         <div class="error-banner-msg">${escapeHtml(stage.lastError.message)}</div>
         ${stage.lastError.stack ? `<div class="error-banner-stack">${escapeHtml(stage.lastError.stack)}</div>` : ''}
         ${stage.lastError.hint ? `<div class="error-banner-hint">💡 Hint: ${escapeHtml(stage.lastError.hint)}</div>` : ''}
-        ${stage.lastErrorBlock ? `<div style="margin-top:8px"><a href="#" class="goto-block" data-block="${stage.lastErrorBlock}" style="color:var(--accent);font-size:10px;text-transform:uppercase;letter-spacing:1px">→ Open ${stage.lastErrorBlock}-handler code</a></div>` : ''}
+        ${stage.lastErrorBlock ? `<div style="margin-top:8px"><a href="#" class="goto-block" data-block="${stage.lastErrorBlock}" style="color:var(--accent);font-size:var(--fs-2xs);text-transform:uppercase;letter-spacing:1px">→ Open ${stage.lastErrorBlock}-handler code</a></div>` : ''}
       </div>`;
   }
   const html = `
@@ -780,16 +830,16 @@ function renderIO(stage) {
       ${errBlock}
       <div class="field-group">
         <label class="field-label">Input — fed into this stage</label>
-        <div style="height: 140px; background: var(--bg-elev); padding: 8px; font-size: 11px; color: var(--text-dim); overflow:auto; white-space: pre; border-radius: 4px; border: 1px solid var(--border);">${escapeHtml(prettyJson(stage.lastInput))}</div>
+        <div style="height: 140px; background: var(--bg-elev); padding: 8px; font-size: var(--fs-xs); color: var(--text-dim); overflow:auto; white-space: pre; border-radius: 4px; border: 1px solid var(--border);">${escapeHtml(prettyJson(stage.lastInput))}</div>
       </div>
       <div class="field-group">
         <label class="field-label">Output — produced by this stage</label>
-        <div style="height: 140px; background: var(--bg-elev); padding: 8px; font-size: 11px; color: var(--text-dim); overflow:auto; white-space: pre; border-radius: 4px; border: 1px solid var(--border);">${escapeHtml(prettyJson(stage.lastOutput))}</div>
+        <div style="height: 140px; background: var(--bg-elev); padding: 8px; font-size: var(--fs-xs); color: var(--text-dim); overflow:auto; white-space: pre; border-radius: 4px; border: 1px solid var(--border);">${escapeHtml(prettyJson(stage.lastOutput))}</div>
       </div>
-      <div style="display: flex; gap: 8px; padding: 10px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 4px; font-size: 11px;">
-        <div style="flex:1"><span style="color:var(--text-dim);text-transform:uppercase;font-size:9px;letter-spacing:1px">Duration</span><div style="margin-top:3px;font-weight:600;color:var(--accent)">${stage.lastDuration ?? '—'}ms</div></div>
-        <div style="flex:1"><span style="color:var(--text-dim);text-transform:uppercase;font-size:9px;letter-spacing:1px">Credits</span><div style="margin-top:3px;font-weight:600;color:var(--accent)">${stage.lastCredits ?? '—'}</div></div>
-        <div style="flex:1"><span style="color:var(--text-dim);text-transform:uppercase;font-size:9px;letter-spacing:1px">State</span><div style="margin-top:3px;font-weight:600">${stage.state.toUpperCase()}</div></div>
+      <div style="display: flex; gap: 8px; padding: 10px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 4px; font-size: var(--fs-xs);">
+        <div style="flex:1"><span style="color:var(--text-dim);text-transform:uppercase;font-size:var(--fs-3xs);letter-spacing:1px">Duration</span><div style="margin-top:3px;font-weight:600;color:var(--accent)">${stage.lastDuration ?? '—'}ms</div></div>
+        <div style="flex:1"><span style="color:var(--text-dim);text-transform:uppercase;font-size:var(--fs-3xs);letter-spacing:1px">Credits</span><div style="margin-top:3px;font-weight:600;color:var(--accent)">${stage.lastCredits ?? '—'}</div></div>
+        <div style="flex:1"><span style="color:var(--text-dim);text-transform:uppercase;font-size:var(--fs-3xs);letter-spacing:1px">State</span><div style="margin-top:3px;font-weight:600">${stage.state.toUpperCase()}</div></div>
       </div>
     </div>`;
   // Wire goto-block link
@@ -871,6 +921,12 @@ window.require(['vs/editor/editor.main'], function() {
   }
 });
 
+// Helper: derive Monaco font size from current root font-size so editor scales with the app.
+function monacoFontSize(scale = 0.85) {
+  const root = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  return Math.max(11, Math.round(root * scale));
+}
+
 // ============== FULLSCREEN EDITOR ==============
 function openFullscreenEditor(stage, kind) {
   const overlay = document.getElementById('fullscreenEditorOverlay');
@@ -895,8 +951,8 @@ function openFullscreenEditor(stage, kind) {
       value: code,
       language: 'deluge',
       theme: getComputedStyle(document.body).getPropertyValue('--monaco-theme').trim() || 'deluge-dark',
-      fontSize: 13,
-      lineHeight: 22,
+      fontSize: monacoFontSize(0.95),
+      lineHeight: Math.round(monacoFontSize(0.95) * 1.45),
       minimap: { enabled: true },
       scrollBeyondLastLine: false,
       automaticLayout: true,
@@ -907,7 +963,12 @@ function openFullscreenEditor(stage, kind) {
     fsEditor.onDidChangeModelContent(() => {
       stage[kind].code = fsEditor.getValue();
     });
-    
+
+    // Bind Esc inside Monaco to close the fullscreen editor (overrides Monaco's own Esc).
+    fsEditor.addCommand(monaco.KeyCode.Escape, () => {
+      closeFullscreenEditor();
+    });
+
     // Store reference for cleanup
     overlay.fsEditorInstance = fsEditor;
   }
@@ -931,6 +992,15 @@ document.getElementById('fullscreenEditorOverlay').addEventListener('click', (e)
     closeFullscreenEditor();
   }
 });
+// Robust Esc handling for the fullscreen Monaco editor — capture phase on overlay
+// so it fires before Monaco's internal keybindings.
+document.getElementById('fullscreenEditorOverlay').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('fullscreenEditorOverlay').classList.contains('open')) {
+    e.preventDefault();
+    e.stopPropagation();
+    closeFullscreenEditor();
+  }
+}, true);
 
 function mountOpenEditors(stage) {
   if (!monacoReady || !stage) return;
@@ -947,7 +1017,7 @@ function mountOpenEditors(stage) {
       value: stage[kind].code,
       language: 'deluge',
       theme,
-      fontSize: 12,
+      fontSize: monacoFontSize(0.85),
       fontFamily: 'JetBrains Mono, monospace',
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
@@ -1140,7 +1210,7 @@ function renderConsoleBody() {
       rows = rows.filter(l => (l.msg + ' ' + (l.stageName || '')).toLowerCase().includes(q));
     }
     if (rows.length === 0) {
-      body.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-dim);font-size:11px;">No matching logs.</div>`;
+      body.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-dim);font-size:var(--fs-xs);">No matching logs.</div>`;
       return;
     }
     body.innerHTML = rows.map((l, i) => logLineHtml(l, i)).join('');
@@ -1154,7 +1224,7 @@ function renderConsoleBody() {
       rows = rows.filter(l => (l.msg + ' ' + (l.stageName || '')).toLowerCase().includes(q));
     }
     if (rows.length === 0) {
-      body.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-dim);font-size:11px;">No matching errors. ✓</div>`;
+      body.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-dim);font-size:var(--fs-xs);">No matching errors. ✓</div>`;
       return;
     }
     body.innerHTML = rows.map(l => logLineHtml(l)).join('');
@@ -1170,7 +1240,7 @@ function renderConsoleBody() {
       rows = rows.filter(a => JSON.stringify(a).toLowerCase().includes(q));
     }
     if (rows.length === 0) {
-      body.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-dim);font-size:11px;">No matching audit records. Run the pipeline or adjust filters.</div>`;
+      body.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-dim);font-size:var(--fs-xs);">No matching audit records. Run the pipeline or adjust filters.</div>`;
       return;
     }
     body.innerHTML = `
@@ -1192,7 +1262,7 @@ function renderConsoleBody() {
               <td><span class="json-snippet" title="${escapeAttr(JSON.stringify(a.output))}">${escapeHtml(JSON.stringify(a.output))}</span></td>
               <td>${a.duration}ms</td>
               <td>${a.credits}</td>
-              <td style="color:var(--text-faint);font-size:10px">${a.startedAt}</td>
+              <td style="color:var(--text-faint);font-size:var(--fs-2xs)">${a.startedAt}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -1583,7 +1653,7 @@ function simulateTask(stage, payload, idx) {
 function setPipelineStatus(status) {
   const el = document.getElementById('pipelineStatus');
   const label = { idle: 'IDLE', running: 'RUNNING…', success: 'COMPLETED', error: 'FAILED' }[status];
-  el.innerHTML = `<span class="stage-status-dot ${status}" style="width:6px;height:6px;"></span><span style="font-size: 10px;">${label}</span>`;
+  el.innerHTML = `<span class="stage-status-dot ${status}" style="width:6px;height:6px;"></span><span style="font-size: var(--fs-2xs);">${label}</span>`;
 }
 
 // ============== HELPERS ==============
@@ -1625,10 +1695,24 @@ document.addEventListener('themechange', (e) => {
 document.getElementById('layoutToggle').addEventListener('click', e => {
   const btn = e.target.closest('.layout-btn');
   if (!btn) return;
-  document.querySelectorAll('.layout-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#layoutToggle .layout-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   state.layout = btn.dataset.layout;
   renderPipeline();
+});
+
+// UI density toggle (compact / cozy / spacious) — shared helper in utils.js
+initFontFamilyPicker();
+initDensityToggle();
+document.addEventListener('densitychange', () => {
+  setTimeout(() => {
+    Object.values(monacoEditors || {}).forEach(ed => { try { ed.layout(); } catch(_) {} });
+  }, 50);
+});
+document.addEventListener('fontchange', () => {
+  setTimeout(() => {
+    Object.values(monacoEditors || {}).forEach(ed => { try { ed.layout(); } catch(_) {} });
+  }, 50);
 });
 
 document.getElementById('addVarBtn').addEventListener('click', () => {
@@ -1814,12 +1898,288 @@ document.getElementById('clearLogsBtn').addEventListener('click', (e) => {
   });
 })();
 
+// ============== PANEL COLLAPSE / ZEN MODE ==============
+function setPanelCollapsed(side, collapsed) {
+  const panel = document.getElementById(side === 'left' ? 'leftPanel' : 'rightPanel');
+  if (!panel) return;
+  panel.classList.toggle('collapsed', collapsed);
+  document.body.classList.toggle(side + '-collapsed', collapsed);
+  if (collapsed) renderPanelStrip(side);
+}
+
+function renderPanelStrip(side) {
+  if (side === 'left') {
+    const strip = document.getElementById('leftPanelStrip');
+    if (!strip) return;
+    const varsHtml = state.variables.map((v, i) => `
+      <div class="panel-strip-item" data-action="expand-left" title="${escapeAttr(v.key || '(empty)') } = ${escapeAttr(String(v.value))}">
+        ${escapeHtml((v.key || '?').slice(0, 2).toUpperCase())}
+      </div>
+    `).join('');
+    const tmplHtml = TASK_TEMPLATES.map(t => `
+      <div class="panel-strip-item" data-template="${escapeAttr(t.name)}" title="${escapeAttr(t.name)} — ${escapeAttr(t.desc)}">
+        ${t.icon}
+      </div>
+    `).join('');
+    strip.innerHTML = `
+      <button class="panel-strip-item" data-action="expand-left" title="Expand panel">
+        <svg class="icon-svg" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      <div class="panel-strip-label">Vars</div>
+      ${varsHtml || '<div class="panel-strip-label" style="opacity:0.5">—</div>'}
+      <button class="panel-strip-item" data-action="add-var" title="Add variable">
+        <svg class="icon-svg" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      <div class="panel-strip-divider"></div>
+      <div class="panel-strip-label">Tpl</div>
+      ${tmplHtml}
+    `;
+    strip.onclick = (e) => {
+      const item = e.target.closest('[data-action], [data-template]');
+      if (!item) return;
+      if (item.dataset.action === 'expand-left') {
+        setPanelCollapsed('left', false);
+      } else if (item.dataset.action === 'add-var') {
+        setPanelCollapsed('left', false);
+        state.variables.push({ key: '', value: '' });
+        renderVars();
+        markDirty();
+      } else if (item.dataset.template) {
+        setPanelCollapsed('left', false);
+        // Reuse existing template-add flow (showAddStageModal preselect not available — just open modal)
+        showAddStageModal();
+      }
+    };
+  } else {
+    const strip = document.getElementById('rightPanelStrip');
+    if (!strip) return;
+    const tabs = [
+      { tab: 'code',   label: 'Code',   svg: '<svg class="icon-svg" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>' },
+      { tab: 'config', label: 'Cfg',    svg: '<svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>' },
+      { tab: 'io',     label: 'I/O',    svg: '<svg class="icon-svg" viewBox="0 0 24 24"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg>' },
+    ];
+    strip.innerHTML = `
+      <button class="panel-strip-item" data-action="expand-right" title="Expand panel">
+        <svg class="icon-svg" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <div class="panel-strip-divider"></div>
+      ${tabs.map(t => `
+        <div class="panel-strip-item ${state.inspectorTab === t.tab ? 'active' : ''}" data-tab="${t.tab}" title="${t.label}">${t.svg}</div>
+      `).join('')}
+    `;
+    strip.onclick = (e) => {
+      const item = e.target.closest('[data-action], [data-tab]');
+      if (!item) return;
+      if (item.dataset.action === 'expand-right') {
+        setPanelCollapsed('right', false);
+      } else if (item.dataset.tab) {
+        state.inspectorTab = item.dataset.tab;
+        setPanelCollapsed('right', false);
+        renderInspector();
+      }
+    };
+  }
+}
+
+// Collapse-button clicks (delegated)
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-collapse]');
+  if (!btn) return;
+  const side = btn.dataset.collapse;
+  const panel = document.getElementById(side === 'left' ? 'leftPanel' : 'rightPanel');
+  setPanelCollapsed(side, !panel.classList.contains('collapsed'));
+});
+
+// Zen mode (distraction-free + true browser fullscreen)
+function setZenMode(on) {
+  document.body.classList.toggle('zen-mode', on);
+  // Mark the right panel as an edge-panel while in zen so it slides in on demand
+  const rp = document.getElementById('rightPanel');
+  if (rp) rp.classList.toggle('edge-panel', on);
+  if (!on) document.body.classList.remove('edge-open');
+  // Also drive the browser fullscreen API to use entire screen
+  if (on) {
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+    if (req && !document.fullscreenElement) req.call(el).catch(() => {});
+  } else if (document.fullscreenElement) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+    if (exit) exit.call(document).catch(() => {});
+  }
+}
+document.getElementById('zenBtn').addEventListener('click', () => setZenMode(!document.body.classList.contains('zen-mode')));
+document.getElementById('zenExitBtn').addEventListener('click', () => setZenMode(false));
+document.getElementById('zenRunBtn').addEventListener('click', () => {
+  if (typeof runPipeline === 'function') runPipeline();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  // 1. Close fullscreen Monaco editor if open
+  const fsOverlay = document.getElementById('fullscreenEditorOverlay');
+  if (fsOverlay && fsOverlay.classList.contains('open')) {
+    e.preventDefault();
+    e.stopPropagation();
+    closeFullscreenEditor();
+    return;
+  }
+  // 2. Close edge panel if open
+  if (document.body.classList.contains('edge-open')) {
+    e.preventDefault();
+    document.body.classList.remove('edge-open');
+    return;
+  }
+  // 3. Exit zen mode
+  if (document.body.classList.contains('zen-mode')) {
+    e.preventDefault();
+    setZenMode(false);
+  }
+}, true);  // capture phase so Monaco can't swallow Esc first
+
+// Edge-panel behavior: handle opens slide-in, backdrop / Esc closes it
+const edgeHandle = document.getElementById('edgeHandle');
+const edgeBackdrop = document.getElementById('edgeBackdrop');
+if (edgeHandle) {
+  edgeHandle.addEventListener('click', () => {
+    document.body.classList.add('edge-open');
+  });
+}
+if (edgeBackdrop) {
+  edgeBackdrop.addEventListener('click', () => {
+    document.body.classList.remove('edge-open');
+  });
+}
+// Also open via swipe-from-right-edge gesture
+let edgeTouchStartX = null;
+window.addEventListener('touchstart', (e) => {
+  if (!document.body.classList.contains('zen-mode')) return;
+  const t = e.touches[0];
+  if (t && (window.innerWidth - t.clientX) < 24) edgeTouchStartX = t.clientX;
+}, { passive: true });
+window.addEventListener('touchend', (e) => {
+  if (edgeTouchStartX == null) return;
+  const t = e.changedTouches[0];
+  if (t && (edgeTouchStartX - t.clientX) > 40) document.body.classList.add('edge-open');
+  edgeTouchStartX = null;
+}, { passive: true });
+
+// True browser Fullscreen (uses entire screen)
+function toggleFullscreen() {
+  const inFs = document.fullscreenElement || document.webkitFullscreenElement;
+  if (!inFs) {
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+    if (req) req.call(el).catch(err => console.warn('Fullscreen denied:', err));
+  } else {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+    if (exit) exit.call(document);
+  }
+}
+document.getElementById('fullscreenBtn').addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', () => {
+  const inFs = !!document.fullscreenElement;
+  document.body.classList.toggle('is-fullscreen', inFs);
+  // If user exits browser fullscreen (Esc / F11), also exit zen so state stays in sync
+  if (!inFs && document.body.classList.contains('zen-mode')) {
+    document.body.classList.remove('zen-mode', 'edge-open');
+    const rp = document.getElementById('rightPanel');
+    if (rp) rp.classList.remove('edge-panel');
+  }
+});
+
+// ============== DIRTY TRACKING ==============
+function snapshotPipeline() {
+  return JSON.stringify({
+    variables: state.variables,
+    stages: state.stages.map(s => ({
+      name: s.name,
+      desc: s.desc,
+      inputSchema: s.inputSchema,
+      maxRetries: s.maxRetries || 0,
+      pre:  { enabled: !!s.pre.enabled,  code: s.pre.code },
+      task: { code: s.task.code },
+      post: { enabled: !!s.post.enabled, code: s.post.code },
+    })),
+  });
+}
+let baselineSnapshot = '';
+function resetBaseline() {
+  baselineSnapshot = snapshotPipeline();
+  updateDirtyBadge();
+}
+function isDirty() {
+  return snapshotPipeline() !== baselineSnapshot;
+}
+function markDirty() { updateDirtyBadge(); }
+function updateDirtyBadge() {
+  const badge = document.getElementById('dirtyBadge');
+  if (!badge) return;
+  if (isDirty()) {
+    badge.textContent = 'Unsaved';
+    badge.className = 'dirty-badge is-dirty';
+  } else {
+    badge.textContent = 'Saved';
+    badge.className = 'dirty-badge is-clean';
+  }
+}
+// Poll every 600ms — catches all mutation sites without instrumenting each
+setInterval(updateDirtyBadge, 600);
+// Warn on unload if dirty
+window.addEventListener('beforeunload', (e) => {
+  if (isDirty()) {
+    e.preventDefault();
+    e.returnValue = '';
+    return '';
+  }
+});
+
+// ============== EXPORT AS JSON ==============
+function exportPipelineAsJson() {
+  const data = {
+    name: document.getElementById('breadcrumbName')?.textContent?.trim() || 'pipeline',
+    exportedAt: new Date().toISOString(),
+    version: '0.3',
+    variables: state.variables,
+    stages: state.stages.map(s => ({
+      id: s.id,
+      name: s.name,
+      desc: s.desc,
+      inputSchema: s.inputSchema,
+      maxRetries: s.maxRetries || 0,
+      pre:  { enabled: !!s.pre.enabled,  code: s.pre.code },
+      task: { code: s.task.code },
+      post: { enabled: !!s.post.enabled, code: s.post.code },
+    })),
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const slug = (data.name || 'pipeline').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'pipeline';
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yyyy = String(now.getFullYear());
+  const hh = String(now.getHours()).padStart(2, '0');
+  const min = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  a.href = url;
+  a.download = `${slug}_${dd}-${mm}-${yyyy}-${hh}-${min}-${ss}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  log('success', null, `Exported pipeline as <code>${escapeHtml(a.download)}</code>`);
+  // Snapshot becomes the new baseline after a successful export
+  resetBaseline();
+}
+document.getElementById('exportJsonBtn').addEventListener('click', exportPipelineAsJson);
+
 // ============== BOOT ==============
 seedPipeline();
 renderVars();
 renderTemplates();
 renderPipeline();
 renderInspector();
+resetBaseline();
 log('system', null, 'Deluge Pipeline Builder ready. Click a stage to inspect, or hit Run Pipeline.');
 log('info',   null, `Loaded ${state.stages.length} stages, ${state.variables.length} variables.`);
 
