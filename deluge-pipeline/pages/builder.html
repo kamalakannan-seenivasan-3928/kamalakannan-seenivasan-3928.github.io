@@ -1,0 +1,1828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Deluge · Event Pipeline Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/theme.css">
+<link rel="stylesheet" href="../css/builder.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+</head>
+<body data-theme="dark">
+  <div class="app">
+
+    <!-- ========= TOPBAR ========= -->
+    <header class="topbar">
+      <div class="brand">
+        <a href="../index.html" class="brand-mark" style="text-decoration:none">
+          <img src="../assets/Deluge.png" alt="Deluge" style="width:100%;height:100%;object-fit:contain">
+        </a>
+        <div>
+          <div class="brand-name">Deluge Pipeline</div>
+        </div>
+        <span class="brand-tag">PROTO · v0.3</span>
+        <nav class="breadcrumb">
+          <a href="../index.html">Dashboard</a>
+          <span class="sep">›</span>
+          <span class="current" id="breadcrumbName">Pipeline Builder</span>
+        </nav>
+      </div>
+      <div class="topbar-actions">
+
+        <!-- Layout toggle -->
+        <div class="layout-toggle" id="layoutToggle" title="Pipeline orientation">
+          <button class="layout-btn active" data-layout="horizontal" title="Horizontal flow">
+            <svg class="icon-svg icon-svg-sm" viewBox="0 0 24 24">
+              <rect x="2" y="9" width="6" height="6" rx="1"/>
+              <rect x="10" y="9" width="6" height="6" rx="1"/>
+              <rect x="18" y="9" width="4" height="6" rx="1"/>
+              <line x1="8" y1="12" x2="10" y2="12"/>
+              <line x1="16" y1="12" x2="18" y2="12"/>
+            </svg>
+          </button>
+          <button class="layout-btn" data-layout="vertical" title="Vertical flow">
+            <svg class="icon-svg icon-svg-sm" viewBox="0 0 24 24">
+              <rect x="9" y="2" width="6" height="6" rx="1"/>
+              <rect x="9" y="10" width="6" height="6" rx="1"/>
+              <rect x="9" y="18" width="6" height="4" rx="1"/>
+              <line x1="12" y1="8" x2="12" y2="10"/>
+              <line x1="12" y1="16" x2="12" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Theme switcher (auto-built by initThemeSwitcher) -->
+        <div id="themePicker"></div>
+
+        <button class="btn" id="resetBtn">
+          <svg class="icon-svg" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+          Reset
+        </button>
+        <button class="btn btn-primary" id="runBtn">
+          <svg class="icon-svg" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Run Pipeline
+        </button>
+      </div>
+    </header>
+
+    <!-- ========= MAIN GRID ========= -->
+    <div class="main" id="mainGrid">
+
+      <!-- LEFT PANEL: Variables + Task templates -->
+      <aside class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Variables</span>
+          <button class="btn-icon" id="addVarBtn" title="Add variable">
+            <svg class="icon-svg" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+        </div>
+        <div class="panel-body">
+          <div class="var-list" id="varList"></div>
+          <p class="var-hint">
+            Reference variables in code with <code>vars.NAME</code>.<br/>
+            Use them for API keys, environment flags, thresholds.
+          </p>
+          <hr class="section-divider"/>
+          <div class="section-label">Task Templates</div>
+          <div id="templateList"></div>
+        </div>
+      </aside>
+
+      <!-- Resize handle BETWEEN left panel and center -->
+      <div class="resize-handle resize-handle-left" id="resizeHandleLeft" style="left: var(--left-w, 280px);"></div>
+
+      <!-- CENTER: Canvas + Console -->
+      <main class="canvas-wrap">
+        <div class="canvas-toolbar">
+          <div class="pipeline-info">
+            <span class="pipeline-name">Order Fulfillment Flow</span>
+            <span class="stat-pill"><b id="stageCount">0</b> stages</span>
+            <span class="stat-pill"><b id="creditsUsed">0</b> credits</span>
+            <span class="stat-pill"><b id="totalDuration">0ms</b> total</span>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <span style="font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px;">Status:</span>
+            <span class="stat-pill" id="pipelineStatus">
+              <span class="stage-status-dot idle" style="width:6px;height:6px;"></span>
+              <span style="font-size: 10px;">IDLE</span>
+            </span>
+          </div>
+        </div>
+        <div class="canvas" id="canvas">
+          <div class="pipeline-flow" id="pipelineFlow"></div>
+        </div>
+
+        <!-- CONSOLE -->
+        <div class="console-wrap open" id="consoleWrap">
+          <div class="console-resize-handle" id="consoleResizeHandle"></div>
+          <div class="console-header" id="consoleHeader">
+            <span class="console-title" id="consoleTitle">▾ Console</span>
+            <div class="console-tabs" id="consoleTabs">
+              <div class="console-tab active" data-tab="logs">Logs</div>
+              <div class="console-tab" data-tab="audit">Audit Trail</div>
+              <div class="console-tab" data-tab="errors">Errors</div>
+            </div>
+            <div class="console-spacer"></div>
+            <div class="console-counters">
+              <span class="counter-pill success">● <b id="cntSuccess">0</b> ok</span>
+              <span class="counter-pill warn">● <b id="cntWarn">0</b> warn</span>
+              <span class="counter-pill error">● <b id="cntError">0</b> err</span>
+            </div>
+            <button class="btn-icon" id="clearLogsBtn" title="Clear logs" onclick="event.stopPropagation()">
+              <svg class="icon-svg" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14H7L5 6"/></svg>
+            </button>
+          </div>
+          <!-- Filter bar (shown only for logs/audit/errors tabs) -->
+          <div class="filter-bar" id="filterBar"></div>
+          <div class="console-body" id="consoleBody"></div>
+        </div>
+      </main>
+
+      <!-- Resize handle BETWEEN center and right panel -->
+      <div class="resize-handle" id="resizeHandle" style="right: var(--insp-w, 420px);"></div>
+
+      <!-- RIGHT PANEL: Inspector -->
+      <aside class="panel">
+        <div class="inspector-tabs" id="inspectorTabs">
+          <div class="insp-tab active" data-tab="code">Code</div>
+          <div class="insp-tab" data-tab="config">Config</div>
+          <div class="insp-tab" data-tab="io">I/O</div>
+        </div>
+        <div class="panel-body" id="inspectorBody">
+          <div class="empty-inspector">
+            <div class="symbol">∅</div>
+            <div class="text">Select a stage to configure<br/>its handlers, code & I/O.</div>
+          </div>
+        </div>
+      </aside>
+
+    </div>
+  </div>
+
+  <!-- Add Stage Modal -->
+  <div class="modal-overlay" id="addStageModal">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <div class="modal-title">Add New Stage</div>
+        <button class="modal-close" onclick="document.getElementById('addStageModal').classList.remove('open')">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="add-stage-layout">
+          <!-- Left: Start from Scratch -->
+          <div class="add-stage-scratch">
+            <div class="add-section-title">Create New</div>
+            <button class="add-option-card" data-action="scratch">
+              <div class="option-icon">
+                <svg class="icon-svg" viewBox="0 0 24 24" style="width:28px;height:28px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </div>
+              <div class="option-title">Start from Scratch</div>
+              <div class="option-desc">Create a blank stage with empty handlers</div>
+            </button>
+          </div>
+          <!-- Right: Templates list -->
+          <div class="add-stage-templates">
+            <div class="add-section-title">Or choose a Template</div>
+            <div id="modalTemplateList" class="modal-template-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fullscreen Editor Modal -->
+  <div class="fullscreen-editor-overlay" id="fullscreenEditorOverlay">
+    <div class="fullscreen-editor">
+      <div class="fullscreen-editor-header">
+        <div class="fullscreen-editor-title" id="fullscreenEditorTitle"></div>
+        <button class="fullscreen-editor-close" id="closeFullscreenEditor">×</button>
+      </div>
+      <div class="fullscreen-editor-body" id="fullscreenEditorBody"></div>
+    </div>
+  </div>
+
+<script src="../js/utils.js"></script>
+<script>
+/* ==========================================================================
+   DELUGE PIPELINE BUILDER — Prototype v0.2
+   ========================================================================== */
+
+// ============== STATE ==============
+const state = {
+  theme: 'dark',
+  layout: 'horizontal', // 'horizontal' | 'vertical'
+  inspectorWidth: 420,
+  variables: [
+    { key: 'API_BASE', value: 'https://api.zoho.com/v1' },
+    { key: 'NOTIFY_EMAIL', value: 'ops@example.com' },
+    { key: 'MIN_ORDER_AMT', value: '500' },
+  ],
+  stages: [],
+  selectedStageId: null,
+  inspectorTab: 'config',
+  consoleTab: 'logs',
+  logs: [],
+  audit: [],
+  running: false,
+  startTime: null,
+  // Accordion open state per stage block
+  accordion: {}, // { stageId: { pre: bool, task: bool, post: bool } }
+  // Console filters
+  filters: {
+    logs:   { text: '', levels: new Set(), stages: new Set() },
+    audit:  { text: '', statuses: new Set(), blocks: new Set(), stages: new Set() },
+    errors: { text: '', stages: new Set() },
+  },
+};
+
+const TASK_TEMPLATES = [
+  { name: 'HTTP Request',       desc: 'Call an external API endpoint',  icon: '⌁' },
+  { name: 'Transform Payload',  desc: 'Map / reshape incoming data',    icon: '⇄' },
+  { name: 'CRM Lookup',         desc: 'Fetch record from Zoho CRM',     icon: '◎' },
+  { name: 'Send Email',         desc: 'Dispatch transactional email',   icon: '✉' },
+  { name: 'Webhook Notify',     desc: 'Post to downstream webhook',     icon: '↗' },
+  { name: 'Custom Function',    desc: 'Write your own Deluge logic',    icon: '∂' },
+];
+
+const DEFAULT_PRE_CODE = `// Pre-handler — runs BEFORE the task
+// Return true to proceed, false to skip this stage
+// Context variable 'ctx' (map) contains:
+//   ctx.input     - Output from previous stage (map)
+//   ctx.vars      - Pipeline variables (map)
+//   ctx.previous  - Previous stage data (map)
+
+info "Pre-check started for stage";
+if(ctx.input.get("order_amount") < ctx.vars.get("MIN_ORDER_AMT").toLong())
+{
+    info "Order too small — skipping";
+    return false;
+}
+return true;`;
+
+const DEFAULT_TASK_CODE = `// Task — main work for this stage
+// Context variable 'ctx' (map) contains:
+//   ctx.input     - Output from previous stage or trigger (map)
+//   ctx.vars      - Pipeline variables (map)
+//   ctx.previous  - Previous stage data (map)
+// 
+// Return value becomes the next stage's input
+
+response = invokeurl
+[
+    url: ctx.vars.get("API_BASE") + "/orders/" + ctx.input.get("order_id")
+    type: GET
+];
+info "Fetched order from CRM";
+return {
+    "order_id":  response.get("id"),
+    "customer":  response.get("customer"),
+    "total":     response.get("total"),
+    "status":    "fetched"
+};`;
+
+const DEFAULT_POST_CODE = `// Post-handler — runs AFTER the task succeeds
+// Use for cleanup, logging, side effects
+// Context variable 'ctx' (map) contains:
+//   ctx.input     - Task output (map)
+//   ctx.vars      - Pipeline variables (map)
+//   ctx.previous  - Previous stage data (map)
+
+info "Post-handler: result captured for stage";
+return true;`;
+
+// Initial demo pipeline
+function seedPipeline() {
+  state.stages = [
+    makeStage('Validate Order', 'Sanity-check incoming order payload', {
+      pre: { enabled: false, code: DEFAULT_PRE_CODE },
+      task: { code: `info "Validating order " + ctx.input.get("order_id");\nif(ctx.input.get("order_amount") == null)\n{\n    throw "Missing order_amount";\n}\nreturn {\n    "order_id":     ctx.input.get("order_id"),\n    "order_amount": ctx.input.get("order_amount"),\n    "valid":        true\n};` },
+      post: { enabled: true, code: DEFAULT_POST_CODE },
+    }),
+    makeStage('Fetch Customer', 'Lookup customer record from CRM', {
+      pre: { enabled: true, code: DEFAULT_PRE_CODE },
+      task: { code: DEFAULT_TASK_CODE },
+      post: { enabled: false, code: DEFAULT_POST_CODE },
+    }),
+    makeStage('Charge Payment', 'Process payment via gateway', {
+      pre: { enabled: false, code: DEFAULT_PRE_CODE },
+      task: { code: `info "Charging " + ctx.input.get("total");\nreturn {\n    "charge_id": "ch_" + randomNumber(1000, 9999),\n    "amount":    ctx.input.get("total"),\n    "status":    "captured"\n};` },
+      post: { enabled: true, code: DEFAULT_POST_CODE },
+    }),
+    makeStage('Notify Customer', 'Send confirmation email', {
+      pre: { enabled: false, code: DEFAULT_PRE_CODE },
+      task: { code: `sendmail\n[\n    from:    ctx.vars.get("NOTIFY_EMAIL")\n    to:      ctx.input.get("customer")\n    subject: "Order confirmed"\n    message: "Your order has been processed."\n];\nreturn { "notified": true };` },
+      post: { enabled: false, code: DEFAULT_POST_CODE },
+    }),
+  ];
+  // Default: open only the Task accordion for each stage
+  state.stages.forEach(s => {
+    state.accordion[s.id] = { pre: false, task: true, post: false };
+  });
+}
+
+function makeStage(name, desc, blocks) {
+  const id = 's_' + Math.random().toString(36).slice(2, 9);
+  state.accordion[id] = { pre: false, task: true, post: false };
+  return {
+    id,
+    name,
+    desc,
+    inputSchema: '{"order_id": "string", "order_amount": "number"}',
+    maxRetries: 0,
+    pre:  blocks?.pre  ?? { enabled: false, code: DEFAULT_PRE_CODE },
+    task: blocks?.task ?? { code: DEFAULT_TASK_CODE },
+    post: blocks?.post ?? { enabled: false, code: DEFAULT_POST_CODE },
+    state: 'idle',
+    lastDuration: null,
+    lastCredits: null,
+    lastInput: null,
+    lastOutput: null,
+    lastError: null,
+    lastErrorBlock: null,
+    sectionStates: { pre: 'idle', task: 'idle', post: 'idle' },
+    sectionStats: {
+      pre:  { duration: null, credits: null, input: null, output: null, error: null, attempts: 0 },
+      task: { duration: null, credits: null, input: null, output: null, error: null, attempts: 0 },
+      post: { duration: null, credits: null, input: null, output: null, error: null, attempts: 0 },
+    },
+  };
+}
+
+// ============== ADD STAGE MODAL ==============
+function showAddStageModal() {
+  const modal = document.getElementById('addStageModal');
+  const templateList = document.getElementById('modalTemplateList');
+  modal.classList.add('open');
+
+  // Populate templates immediately (always visible)
+  templateList.innerHTML = TASK_TEMPLATES.map(t => `
+    <div class="template-item" data-template="${escapeAttr(t.name)}">
+      <div class="ti-icon">${t.icon}</div>
+      <div class="ti-info">
+        <div class="ti-name">${escapeHtml(t.name)}</div>
+        <div class="ti-desc">${escapeHtml(t.desc)}</div>
+      </div>
+    </div>
+  `).join('');
+
+  // Handle "Start from Scratch" option
+  modal.querySelector('[data-action="scratch"]').onclick = () => {
+    const s = makeStage('New Stage', 'Describe what this stage does');
+    state.stages.push(s);
+    state.selectedStageId = s.id;
+    renderPipeline();
+    renderInspector();
+    modal.classList.remove('open');
+  };
+
+  // Handle template selection
+  templateList.querySelectorAll('.template-item').forEach(item => {
+    item.onclick = () => {
+      const templateName = item.dataset.template;
+      const tpl = TASK_TEMPLATES.find(t => t.name === templateName);
+      const s = makeStage(templateName, tpl.desc);
+      state.stages.push(s);
+      state.selectedStageId = s.id;
+      renderPipeline();
+      renderInspector();
+      modal.classList.remove('open');
+    };
+  });
+}
+
+// Close modal on overlay click
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('modal-overlay')) {
+    e.target.classList.remove('open');
+  }
+});
+
+// ============== RENDER: VARIABLES ==============
+function renderVars() {
+  const root = document.getElementById('varList');
+  root.innerHTML = '';
+  state.variables.forEach((v, i) => {
+    const row = document.createElement('div');
+    row.className = 'var-row';
+    row.innerHTML = `
+      <input value="${escapeAttr(v.key)}" placeholder="NAME" data-i="${i}" data-f="key"/>
+      <input value="${escapeAttr(v.value)}" placeholder="value" data-i="${i}" data-f="value"/>
+      <button class="x-btn" data-i="${i}">×</button>
+    `;
+    row.querySelectorAll('input').forEach(inp => {
+      inp.addEventListener('input', (e) => {
+        const idx = +e.target.dataset.i;
+        const field = e.target.dataset.f;
+        state.variables[idx][field] = e.target.value;
+      });
+    });
+    row.querySelector('.x-btn').addEventListener('click', () => {
+      state.variables.splice(i, 1);
+      renderVars();
+    });
+    root.appendChild(row);
+  });
+}
+
+// ============== RENDER: TEMPLATES ==============
+function renderTemplates() {
+  const root = document.getElementById('templateList');
+  root.innerHTML = '';
+  TASK_TEMPLATES.forEach(t => {
+    const el = document.createElement('div');
+    el.className = 'task-template';
+    el.innerHTML = `
+      <div class="tt-name">${t.icon}  ${t.name}</div>
+      <div class="tt-desc">${t.desc}</div>
+    `;
+    el.addEventListener('click', () => {
+      const s = makeStage(t.name, t.desc);
+      state.stages.push(s);
+      state.selectedStageId = s.id;
+      renderPipeline();
+      renderInspector();
+      log('system', null, `Added stage ${stageRef(s)}`);
+    });
+    root.appendChild(el);
+  });
+}
+
+// ============== RENDER: PIPELINE CANVAS ==============
+function renderPipeline() {
+  const flow = document.getElementById('pipelineFlow');
+  flow.className = 'pipeline-flow' + (state.layout === 'vertical' ? ' vertical' : '');
+  flow.innerHTML = '';
+  state.stages.forEach((s, idx) => {
+    flow.appendChild(stageCardEl(s, idx));
+    if (idx < state.stages.length - 1) {
+      const c = document.createElement('div');
+      c.className = 'stage-connector' + (s.state === 'success' ? ' active' : '');
+      flow.appendChild(c);
+    }
+  });
+  const addBtn = document.createElement('button');
+  addBtn.className = 'add-stage-btn';
+  addBtn.innerHTML = '+ Add Stage';
+  addBtn.addEventListener('click', () => {
+    showAddStageModal();
+  });
+  if (state.stages.length > 0) {
+    const c = document.createElement('div');
+    c.className = 'stage-connector';
+    flow.appendChild(c);
+  }
+  flow.appendChild(addBtn);
+
+  document.getElementById('stageCount').textContent = state.stages.length;
+}
+
+function stageCardEl(s, idx) {
+  const card = document.createElement('div');
+  card.className = 'stage-card ' + (s.state || 'idle');
+  if (state.selectedStageId === s.id) card.classList.add('selected');
+  card.dataset.id = s.id;
+
+  const sectionRow = (label, status, tag) => {
+    const map = {
+      idle: 'idle', running: 'running', success: '✓ ok',
+      error: '✗ fail', skipped: '○ skip', disabled: '—'
+    };
+    const cls = status === 'disabled' ? '' : status;
+    return `
+      <div class="stage-section">
+        <span class="stage-section-label">${label}</span>
+        <span class="tag">${tag}</span>
+        <span class="stage-section-status ${cls}">${map[status] ?? status}</span>
+      </div>`;
+  };
+
+  const preStatus  = !s.pre.enabled  ? 'disabled' : (s.sectionStates.pre || 'idle');
+  const postStatus = !s.post.enabled ? 'disabled' : (s.sectionStates.post || 'idle');
+
+  card.innerHTML = `
+    <div class="stage-header">
+      <div class="stage-header-top">
+        <span class="stage-index">STAGE ${String(idx + 1).padStart(2, '0')}</span>
+        <span class="stage-status-dot ${s.state || 'idle'}"></span>
+      </div>
+      <div class="stage-name">${escapeHtml(s.name)}</div>
+      <div class="stage-desc">${escapeHtml(s.desc)}</div>
+    </div>
+    <div class="stage-body">
+      ${sectionRow('pre',  preStatus,  'gate')}
+      ${sectionRow('task', s.sectionStates.task || 'idle', 'deluge')}
+      ${sectionRow('post', postStatus, 'hook')}
+    </div>
+    <div class="stage-footer">
+      <span class="stage-metric">⏱ <b>${s.lastDuration != null ? s.lastDuration + 'ms' : '—'}</b></span>
+      <span class="stage-metric">◈ <b>${s.lastCredits != null ? s.lastCredits : '—'}</b> cr</span>
+    </div>
+  `;
+
+  card.addEventListener('click', () => selectStage(s.id));
+  return card;
+}
+
+// Navigate to a stage, optionally to a block + flash
+function selectStage(stageId, opts = {}) {
+  state.selectedStageId = stageId;
+  if (opts.tab) state.inspectorTab = opts.tab;
+  if (opts.block) {
+    // Open the corresponding accordion
+    if (state.inspectorTab !== 'io') state.inspectorTab = 'code';
+    if (!state.accordion[stageId]) state.accordion[stageId] = { pre: false, task: true, post: false };
+    state.accordion[stageId].pre = false;
+    state.accordion[stageId].task = false;
+    state.accordion[stageId].post = false;
+    state.accordion[stageId][opts.block] = true;
+  }
+  renderPipeline();
+  renderInspector();
+  // Flash the card
+  setTimeout(() => {
+    const el = document.querySelector(`.stage-card[data-id="${stageId}"]`);
+    if (el) {
+      el.classList.remove('flash');
+      void el.offsetWidth;
+      el.classList.add('flash');
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    }
+  }, 30);
+}
+
+// ============== RENDER: INSPECTOR ==============
+function renderInspector() {
+  const tabsRoot = document.getElementById('inspectorTabs');
+  tabsRoot.querySelectorAll('.insp-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === state.inspectorTab);
+  });
+
+  const body = document.getElementById('inspectorBody');
+  const stage = getSelectedStage();
+  if (!stage) {
+    body.innerHTML = `
+      <div class="empty-inspector">
+        <div class="symbol">◯</div>
+        <div class="text"><b>No Stage Selected</b></div>
+        <div class="hint">Click on any stage card to view and configure its details, code blocks, and input/output data.</div>
+      </div>`;
+    return;
+  }
+
+  if (state.inspectorTab === 'config') {
+    body.innerHTML = `
+      <div class="insp-content">
+        <div class="field-group">
+          <label class="field-label">Stage Name</label>
+          <input class="field-input" id="cfgName" value="${escapeAttr(stage.name)}"/>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Description</label>
+          <textarea class="field-textarea" id="cfgDesc">${escapeHtml(stage.desc)}</textarea>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Expected Input Schema (JSON)</label>
+          <textarea class="field-textarea" id="cfgSchema" style="min-height: 80px;">${escapeHtml(stage.inputSchema)}</textarea>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Max Retries on Task Failure <span style="color:var(--text-faint);font-weight:400">(0–5)</span></label>
+          <input class="field-input" id="cfgMaxRetries" type="number" min="0" max="5" step="1" value="${Number(stage.maxRetries || 0)}"/>
+          <div class="hint" style="font-size:11px;color:var(--text-faint);margin-top:4px">Only the <b>Task</b> block is retried. Pre/Post handlers run once.</div>
+        </div>
+        <div style="display:flex; gap:8px; margin-top: 16px;">
+          <button class="btn btn-danger" id="delStageBtn" style="flex:1">Delete Stage</button>
+          <button class="btn" id="dupStageBtn" style="flex:1">Duplicate</button>
+        </div>
+      </div>`;
+    document.getElementById('cfgName').addEventListener('input', e => {
+      stage.name = e.target.value; renderPipeline();
+    });
+    document.getElementById('cfgDesc').addEventListener('input', e => {
+      stage.desc = e.target.value; renderPipeline();
+    });
+    document.getElementById('cfgSchema').addEventListener('input', e => {
+      stage.inputSchema = e.target.value;
+    });
+    document.getElementById('cfgMaxRetries').addEventListener('input', e => {
+      let n = parseInt(e.target.value, 10);
+      if (isNaN(n) || n < 0) n = 0;
+      if (n > 5) { n = 5; e.target.value = '5'; }
+      stage.maxRetries = n;
+    });
+    document.getElementById('delStageBtn').addEventListener('click', () => {
+      state.stages = state.stages.filter(s => s.id !== stage.id);
+      state.selectedStageId = null;
+      renderPipeline(); renderInspector();
+      log('system', null, `Deleted stage`);
+    });
+    document.getElementById('dupStageBtn').addEventListener('click', () => {
+      const copy = JSON.parse(JSON.stringify(stage));
+      copy.id = 's_' + Math.random().toString(36).slice(2, 9);
+      copy.name = stage.name + ' (copy)';
+      state.accordion[copy.id] = { pre: false, task: true, post: false };
+      const i = state.stages.findIndex(s => s.id === stage.id);
+      state.stages.splice(i + 1, 0, copy);
+      state.selectedStageId = copy.id;
+      renderPipeline(); renderInspector();
+    });
+  } else if (state.inspectorTab === 'code') {
+    const acc = state.accordion[stage.id] || (state.accordion[stage.id] = { pre:false, task:true, post:false });
+    body.innerHTML = `
+      <div class="insp-content">
+        ${accordionHtml(stage, 'pre',  'Pre-Handler',  'GATE',   acc.pre,  stage.pre.enabled,  true)}
+        ${accordionHtml(stage, 'task', 'Task',         'DELUGE', acc.task, true,                false)}
+        ${accordionHtml(stage, 'post', 'Post-Handler', 'HOOK',   acc.post, stage.post.enabled, true)}
+      </div>`;
+    wireAccordion(stage);
+  } else if (state.inspectorTab === 'io') {
+    body.innerHTML = renderIO(stage);
+  }
+}
+
+function accordionHtml(stage, kind, title, tag, isOpen, enabled, toggleable) {
+  const status = (kind === 'task' || enabled) ? (stage.sectionStates[kind] || 'idle') : 'disabled';
+  const dur = stage.sectionStats[kind].duration;
+  const cred = stage.sectionStats[kind].credits;
+  const iconMap = { pre: '⊢', task: '∂', post: '⊣' };
+  const statusLabelMap = {
+    idle: 'idle', running: 'running…', success: '✓ ok',
+    error: '✗ failed', skipped: '○ skipped', disabled: 'disabled'
+  };
+  return `
+    <div class="accordion is-${kind} ${isOpen ? 'open' : ''}" data-acc="${kind}">
+      <div class="accordion-header" data-acc-toggle="${kind}">
+        <span class="accordion-caret">▸</span>
+        <span class="accordion-title">
+          <span class="acc-icon">${iconMap[kind]}</span>
+          ${title}
+        </span>
+        <span class="accordion-meta">${tag}${dur != null ? ' · ' + dur + 'ms' : ''}${cred != null ? ' · ' + cred + 'cr' : ''}${(kind === 'task' && stage.sectionStats.task.attempts > 1) ? ' · ↻' + (stage.sectionStats.task.attempts - 1) : ''}</span>
+        ${isOpen ? `<button class="btn-fullscreen" data-fullscreen="${kind}" title="Open in fullscreen editor" onclick="event.stopPropagation()">
+          <svg class="icon-svg icon-svg-sm" viewBox="0 0 24 24">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+          </svg>
+        </button>` : ''}
+        ${toggleable
+          ? `<span class="accordion-toggle ${enabled ? 'enabled' : ''}" data-toggle="${kind}">${enabled ? '● ON' : '○ OFF'}</span>`
+          : `<span class="accordion-toggle required">● REQUIRED</span>`}
+      </div>
+      ${isOpen ? `
+        <div class="accordion-body ${(!enabled && toggleable) ? 'disabled-block' : ''}">
+          <div class="accordion-status-strip">
+            <span>Status:</span>
+            <span class="strip-status ${status}">${statusLabelMap[status] || status}</span>
+            ${stage.sectionStats[kind].error
+              ? `<span style="color: var(--error); margin-left: auto;">${escapeHtml(stage.sectionStats[kind].error.message)}</span>`
+              : ''}
+          </div>
+          <div class="context-info collapsed">
+            <div class="context-info-title" data-ctx-toggle="${kind}">
+              <span>Context Variable (ctx)</span>
+              <button class="ctx-toggle" title="Toggle context info">
+                <svg class="icon-svg icon-svg-sm" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+            </div>
+            <div class="context-info-body" data-ctx-body="${kind}">
+              <div class="context-info-row">
+                <span class="context-info-key">ctx.input</span>
+                <span class="context-info-type">map</span>
+                <span style="color:var(--text-dim);font-size:9px">Output from previous stage</span>
+              </div>
+              <div class="context-info-row">
+                <span class="context-info-key">ctx.vars</span>
+                <span class="context-info-type">map</span>
+                <span style="color:var(--text-dim);font-size:9px">Pipeline variables</span>
+              </div>
+              <div class="context-info-row">
+                <span class="context-info-key">ctx.previous</span>
+                <span class="context-info-type">map</span>
+                <span style="color:var(--text-dim);font-size:9px">Previous stage metadata</span>
+              </div>
+            </div>
+          </div>
+          <div class="monaco-mount" id="monaco-${kind}"></div>
+        </div>` : ''}
+    </div>
+  `;
+}
+
+function wireAccordion(stage) {
+  // Toggle accordion open/close
+  document.querySelectorAll('[data-acc-toggle]').forEach(h => {
+    h.addEventListener('click', (e) => {
+      // If the click was on the on/off toggle, don't toggle accordion
+      if (e.target.closest('[data-toggle]')) return;
+      const kind = h.dataset.accToggle;
+      state.accordion[stage.id][kind] = !state.accordion[stage.id][kind];
+      renderInspector();
+    });
+  });
+  // Toggle enabled (pre / post)
+  document.querySelectorAll('.accordion-toggle[data-toggle]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const kind = el.dataset.toggle;
+      stage[kind].enabled = !stage[kind].enabled;
+      // Auto-open when enabling
+      if (stage[kind].enabled) state.accordion[stage.id][kind] = true;
+      renderInspector();
+      renderPipeline();
+    });
+  });
+  // Toggle context info collapse
+  document.querySelectorAll('[data-ctx-toggle]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const ctxInfo = btn.closest('.context-info');
+      if (ctxInfo) {
+        ctxInfo.classList.toggle('collapsed');
+      }
+    });
+  });
+  // Open fullscreen editor
+  document.querySelectorAll('[data-fullscreen]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const kind = btn.dataset.fullscreen;
+      openFullscreenEditor(stage, kind);
+    });
+  });
+  // Mount Monaco editors for any open accordion
+  mountOpenEditors(stage);
+}
+
+function renderIO(stage) {
+  const hasRun = stage.lastInput != null || stage.lastOutput != null || stage.lastError != null;
+  if (!hasRun) {
+    return `
+      <div class="insp-content">
+        <div class="empty-inspector" style="padding: 40px 10px;">
+          <div class="symbol">○</div>
+          <div class="text">This stage hasn't been run yet.<br/>Click <b>Run Pipeline</b> to execute.</div>
+        </div>
+      </div>`;
+  }
+  let errBlock = '';
+  if (stage.lastError) {
+    errBlock = `
+      <div class="error-banner">
+        <div class="error-banner-title">⚠ Stage Failed${stage.lastErrorBlock ? ' · in ' + stage.lastErrorBlock + '-handler' : ''}</div>
+        <div class="error-banner-msg">${escapeHtml(stage.lastError.message)}</div>
+        ${stage.lastError.stack ? `<div class="error-banner-stack">${escapeHtml(stage.lastError.stack)}</div>` : ''}
+        ${stage.lastError.hint ? `<div class="error-banner-hint">💡 Hint: ${escapeHtml(stage.lastError.hint)}</div>` : ''}
+        ${stage.lastErrorBlock ? `<div style="margin-top:8px"><a href="#" class="goto-block" data-block="${stage.lastErrorBlock}" style="color:var(--accent);font-size:10px;text-transform:uppercase;letter-spacing:1px">→ Open ${stage.lastErrorBlock}-handler code</a></div>` : ''}
+      </div>`;
+  }
+  const html = `
+    <div class="insp-content">
+      ${errBlock}
+      <div class="field-group">
+        <label class="field-label">Input — fed into this stage</label>
+        <div style="height: 140px; background: var(--bg-elev); padding: 8px; font-size: 11px; color: var(--text-dim); overflow:auto; white-space: pre; border-radius: 4px; border: 1px solid var(--border);">${escapeHtml(prettyJson(stage.lastInput))}</div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Output — produced by this stage</label>
+        <div style="height: 140px; background: var(--bg-elev); padding: 8px; font-size: 11px; color: var(--text-dim); overflow:auto; white-space: pre; border-radius: 4px; border: 1px solid var(--border);">${escapeHtml(prettyJson(stage.lastOutput))}</div>
+      </div>
+      <div style="display: flex; gap: 8px; padding: 10px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 4px; font-size: 11px;">
+        <div style="flex:1"><span style="color:var(--text-dim);text-transform:uppercase;font-size:9px;letter-spacing:1px">Duration</span><div style="margin-top:3px;font-weight:600;color:var(--accent)">${stage.lastDuration ?? '—'}ms</div></div>
+        <div style="flex:1"><span style="color:var(--text-dim);text-transform:uppercase;font-size:9px;letter-spacing:1px">Credits</span><div style="margin-top:3px;font-weight:600;color:var(--accent)">${stage.lastCredits ?? '—'}</div></div>
+        <div style="flex:1"><span style="color:var(--text-dim);text-transform:uppercase;font-size:9px;letter-spacing:1px">State</span><div style="margin-top:3px;font-weight:600">${stage.state.toUpperCase()}</div></div>
+      </div>
+    </div>`;
+  // Wire goto-block link
+  setTimeout(() => {
+    document.querySelectorAll('.goto-block').forEach(a => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        selectStage(stage.id, { tab: 'code', block: a.dataset.block });
+      });
+    });
+  }, 0);
+  return html;
+}
+
+// ============== MONACO ==============
+let monacoReady = false;
+let monacoEditors = {}; // keyed by 'stageId|kind'
+
+window.require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' }});
+window.require(['vs/editor/editor.main'], function() {
+  monaco.languages.register({ id: 'deluge' });
+  monaco.languages.setMonarchTokensProvider('deluge', {
+    keywords: ['if', 'else', 'for', 'each', 'in', 'while', 'return', 'Function', 'true', 'false', 'null', 'void', 'info', 'sendmail', 'invokeurl', 'throw', 'try', 'catch'],
+    typeKeywords: ['string', 'int', 'long', 'double', 'boolean', 'list', 'map'],
+    operators: ['=', '==', '!=', '>', '<', '+', '-', '*', '/', '&&', '||'],
+    tokenizer: {
+      root: [
+        [/\/\/.*$/, 'comment'],
+        [/"[^"]*"/, 'string'],
+        [/\b\d+\b/, 'number'],
+        [/[a-zA-Z_]\w*/, {
+          cases: {
+            '@keywords': 'keyword',
+            '@typeKeywords': 'type',
+            '@default': 'identifier'
+          }
+        }],
+        [/[{}()\[\]]/, '@brackets'],
+        [/[;,.]/, 'delimiter'],
+      ]
+    }
+  });
+  monaco.editor.defineTheme('deluge-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '4a5663', fontStyle: 'italic' },
+      { token: 'keyword', foreground: '7ee8c8' },
+      { token: 'string', foreground: 'f7c873' },
+      { token: 'number', foreground: '6fb3ff' },
+      { token: 'type', foreground: 'c8a8ff' },
+    ],
+    colors: {
+      'editor.background': '#11161d',
+      'editor.foreground': '#e6edf3',
+      'editorLineNumber.foreground': '#4a5663',
+      'editor.selectionBackground': '#1f2933',
+      'editor.lineHighlightBackground': '#161b22',
+    }
+  });
+  monaco.editor.defineTheme('deluge-light', {
+    base: 'vs',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '95a4b6', fontStyle: 'italic' },
+      { token: 'keyword', foreground: '0a6c3e' },
+      { token: 'string', foreground: 'b06b00' },
+      { token: 'number', foreground: '6a3bd0' },
+      { token: 'type', foreground: '1860c4' },
+    ],
+    colors: {
+      'editor.background': '#ffffff',
+      'editor.foreground': '#11192a',
+    }
+  });
+  monacoReady = true;
+  if (state.selectedStageId && state.inspectorTab === 'code') {
+    mountOpenEditors(getSelectedStage());
+  }
+});
+
+// ============== FULLSCREEN EDITOR ==============
+function openFullscreenEditor(stage, kind) {
+  const overlay = document.getElementById('fullscreenEditorOverlay');
+  const title = document.getElementById('fullscreenEditorTitle');
+  const body = document.getElementById('fullscreenEditorBody');
+  
+  const iconMap = { pre: '⊢', task: '∂', post: '⊣' };
+  const titleMap = { pre: 'Pre-handler', task: 'Task Handler', post: 'Post-handler' };
+  
+  title.innerHTML = `
+    <span class="acc-icon" style="background: var(--${kind === 'pre' ? 'info' : kind === 'task' ? 'accent' : 'warn'}-soft); color: var(--${kind === 'pre' ? 'info' : kind === 'task' ? 'accent' : 'warn'})">${iconMap[kind]}</span>
+    <span>${stage.name} · ${titleMap[kind]}</span>
+  `;
+  
+  body.innerHTML = '<div id="fullscreen-monaco" style="width:100%;height:100%"></div>';
+  overlay.classList.add('open');
+  
+  // Mount Monaco editor in fullscreen
+  if (monacoReady) {
+    const code = stage[kind].code || '';
+    const fsEditor = monaco.editor.create(document.getElementById('fullscreen-monaco'), {
+      value: code,
+      language: 'deluge',
+      theme: getComputedStyle(document.body).getPropertyValue('--monaco-theme').trim() || 'deluge-dark',
+      fontSize: 13,
+      lineHeight: 22,
+      minimap: { enabled: true },
+      scrollBeyondLastLine: false,
+      automaticLayout: true,
+      padding: { top: 12, bottom: 12 }
+    });
+    
+    // Save changes back to stage
+    fsEditor.onDidChangeModelContent(() => {
+      stage[kind].code = fsEditor.getValue();
+    });
+    
+    // Store reference for cleanup
+    overlay.fsEditorInstance = fsEditor;
+  }
+}
+
+function closeFullscreenEditor() {
+  const overlay = document.getElementById('fullscreenEditorOverlay');
+  if (overlay.fsEditorInstance) {
+    overlay.fsEditorInstance.dispose();
+    overlay.fsEditorInstance = null;
+  }
+  overlay.classList.remove('open');
+  // Re-render to update the inline editor with any changes
+  renderInspector();
+}
+
+// Close fullscreen editor handlers
+document.getElementById('closeFullscreenEditor').addEventListener('click', closeFullscreenEditor);
+document.getElementById('fullscreenEditorOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'fullscreenEditorOverlay') {
+    closeFullscreenEditor();
+  }
+});
+
+function mountOpenEditors(stage) {
+  if (!monacoReady || !stage) return;
+  ['pre', 'task', 'post'].forEach(kind => {
+    const mountEl = document.getElementById('monaco-' + kind);
+    if (!mountEl) return;
+    const key = stage.id + '|' + kind;
+    // Always recreate (DOM was re-rendered)
+    if (monacoEditors[key]) {
+      try { monacoEditors[key].dispose(); } catch(e) {}
+    }
+    const theme = getComputedStyle(document.body).getPropertyValue('--monaco-theme').trim() || 'deluge-dark';
+    monacoEditors[key] = monaco.editor.create(mountEl, {
+      value: stage[kind].code,
+      language: 'deluge',
+      theme,
+      fontSize: 12,
+      fontFamily: 'JetBrains Mono, monospace',
+      minimap: { enabled: false },
+      scrollBeyondLastLine: false,
+      lineNumbers: 'on',
+      automaticLayout: true,
+      padding: { top: 8, bottom: 8 },
+      readOnly: false,
+    });
+    monacoEditors[key].onDidChangeModelContent(() => {
+      stage[kind].code = monacoEditors[key].getValue();
+    });
+  });
+}
+
+function getSelectedStage() {
+  return state.stages.find(s => s.id === state.selectedStageId);
+}
+
+// ============== HELPERS for log/audit references ==============
+function stageRef(stageOrName, block) {
+  // produces an HTML anchor that selectStage can pick up
+  if (stageOrName == null) return '—';
+  const s = typeof stageOrName === 'string' ? state.stages.find(x => x.name === stageOrName) : stageOrName;
+  if (!s) return `<span class="log-stage no-link">${escapeHtml(stageOrName?.name || stageOrName)}</span>`;
+  const blockSuffix = block ? `<span class="block-ref ${block}" data-stage="${s.id}" data-block="${block}">${block}</span>` : '';
+  return `<span class="stage-ref" data-stage="${s.id}" data-block="${block || ''}">${escapeHtml(s.name)}</span>${blockSuffix ? ' ' + blockSuffix : ''}`;
+}
+
+// ============== CONSOLE ==============
+function log(level, stageInfo, msg) {
+  // stageInfo can be: null, string (name), {stageId, name, block}, or a Stage object
+  const t = new Date();
+  const time = `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}.${String(t.getMilliseconds()).padStart(3,'0')}`;
+
+  let stageId = null, stageName = null, block = null;
+  if (stageInfo) {
+    if (typeof stageInfo === 'string') {
+      stageName = stageInfo;
+      const found = state.stages.find(s => s.name === stageInfo);
+      if (found) stageId = found.id;
+    } else if (stageInfo.id) {
+      stageId = stageInfo.id;
+      stageName = stageInfo.name;
+      block = stageInfo.block || null;
+    } else if (stageInfo.stageId) {
+      stageId = stageInfo.stageId;
+      stageName = stageInfo.name;
+      block = stageInfo.block || null;
+    }
+  }
+  state.logs.push({ time, level, stageId, stageName, block, msg });
+  renderConsole();
+}
+
+function levelChips() {
+  return ['info','success','warn','error','system'];
+}
+
+function uniqueStageNamesFromLogs() {
+  const seen = new Set();
+  state.logs.forEach(l => { if (l.stageName) seen.add(l.stageName); });
+  return [...seen];
+}
+function uniqueStagesFromAudit() {
+  const seen = new Set();
+  state.audit.forEach(a => { if (a.stage) seen.add(a.stage); });
+  return [...seen];
+}
+
+function renderFilterBar() {
+  const bar = document.getElementById('filterBar');
+  const tab = state.consoleTab;
+
+  if (tab === 'logs') {
+    const f = state.filters.logs;
+    bar.innerHTML = `
+      <input type="text" class="filter-input" placeholder="Filter messages, stages…" value="${escapeAttr(f.text)}" id="fInput"/>
+      <div class="filter-chips">
+        ${levelChips().map(lv => `
+          <span class="filter-chip lvl-${lv} ${f.levels.has(lv) ? 'active' : ''}" data-level="${lv}">${lv}</span>
+        `).join('')}
+      </div>
+      <div class="filter-chips">
+        ${uniqueStageNamesFromLogs().map(sn => `
+          <span class="filter-chip ${f.stages.has(sn) ? 'active' : ''}" data-stage="${escapeAttr(sn)}">${escapeHtml(sn)}</span>
+        `).join('')}
+      </div>
+      <span class="filter-clear" id="fClear">Clear</span>
+    `;
+    document.getElementById('fInput').addEventListener('input', e => { f.text = e.target.value; renderConsoleBody(); });
+    bar.querySelectorAll('[data-level]').forEach(c => c.addEventListener('click', () => {
+      const lv = c.dataset.level;
+      if (f.levels.has(lv)) f.levels.delete(lv); else f.levels.add(lv);
+      renderFilterBar(); renderConsoleBody();
+    }));
+    bar.querySelectorAll('[data-stage]').forEach(c => c.addEventListener('click', () => {
+      const sn = c.dataset.stage;
+      if (f.stages.has(sn)) f.stages.delete(sn); else f.stages.add(sn);
+      renderFilterBar(); renderConsoleBody();
+    }));
+    document.getElementById('fClear').addEventListener('click', () => {
+      f.text = ''; f.levels.clear(); f.stages.clear();
+      renderFilterBar(); renderConsoleBody();
+    });
+  } else if (tab === 'audit') {
+    const f = state.filters.audit;
+    const statuses = ['success','error','skipped','running'];
+    const blocks = ['pre','task','post'];
+    bar.innerHTML = `
+      <input type="text" class="filter-input" placeholder="Filter audit records…" value="${escapeAttr(f.text)}" id="fInput"/>
+      <div class="filter-chips">
+        ${statuses.map(s => `
+          <span class="filter-chip ${f.statuses.has(s) ? 'active' : ''}" data-status="${s}">${s}</span>
+        `).join('')}
+      </div>
+      <div class="filter-chips">
+        ${blocks.map(b => `
+          <span class="filter-chip ${f.blocks.has(b) ? 'active' : ''}" data-block="${b}">${b}</span>
+        `).join('')}
+      </div>
+      <div class="filter-chips">
+        ${uniqueStagesFromAudit().map(sn => `
+          <span class="filter-chip ${f.stages.has(sn) ? 'active' : ''}" data-stage="${escapeAttr(sn)}">${escapeHtml(sn)}</span>
+        `).join('')}
+      </div>
+      <span class="filter-clear" id="fClear">Clear</span>
+    `;
+    document.getElementById('fInput').addEventListener('input', e => { f.text = e.target.value; renderConsoleBody(); });
+    bar.querySelectorAll('[data-status]').forEach(c => c.addEventListener('click', () => {
+      const v = c.dataset.status;
+      if (f.statuses.has(v)) f.statuses.delete(v); else f.statuses.add(v);
+      renderFilterBar(); renderConsoleBody();
+    }));
+    bar.querySelectorAll('[data-block]').forEach(c => c.addEventListener('click', () => {
+      const v = c.dataset.block;
+      if (f.blocks.has(v)) f.blocks.delete(v); else f.blocks.add(v);
+      renderFilterBar(); renderConsoleBody();
+    }));
+    bar.querySelectorAll('[data-stage]').forEach(c => c.addEventListener('click', () => {
+      const v = c.dataset.stage;
+      if (f.stages.has(v)) f.stages.delete(v); else f.stages.add(v);
+      renderFilterBar(); renderConsoleBody();
+    }));
+    document.getElementById('fClear').addEventListener('click', () => {
+      f.text = ''; f.statuses.clear(); f.blocks.clear(); f.stages.clear();
+      renderFilterBar(); renderConsoleBody();
+    });
+  } else if (tab === 'errors') {
+    const f = state.filters.errors;
+    bar.innerHTML = `
+      <input type="text" class="filter-input" placeholder="Filter errors…" value="${escapeAttr(f.text)}" id="fInput"/>
+      <div class="filter-chips">
+        ${uniqueStageNamesFromLogs().map(sn => `
+          <span class="filter-chip ${f.stages.has(sn) ? 'active' : ''}" data-stage="${escapeAttr(sn)}">${escapeHtml(sn)}</span>
+        `).join('')}
+      </div>
+      <span class="filter-clear" id="fClear">Clear</span>
+    `;
+    document.getElementById('fInput').addEventListener('input', e => { f.text = e.target.value; renderConsoleBody(); });
+    bar.querySelectorAll('[data-stage]').forEach(c => c.addEventListener('click', () => {
+      const v = c.dataset.stage;
+      if (f.stages.has(v)) f.stages.delete(v); else f.stages.add(v);
+      renderFilterBar(); renderConsoleBody();
+    }));
+    document.getElementById('fClear').addEventListener('click', () => {
+      f.text = ''; f.stages.clear();
+      renderFilterBar(); renderConsoleBody();
+    });
+  }
+}
+
+function renderConsole() {
+  document.getElementById('cntSuccess').textContent = state.logs.filter(l => l.level === 'success').length;
+  document.getElementById('cntWarn').textContent    = state.logs.filter(l => l.level === 'warn').length;
+  document.getElementById('cntError').textContent   = state.logs.filter(l => l.level === 'error').length;
+  renderFilterBar();
+  renderConsoleBody();
+}
+
+function renderConsoleBody() {
+  const body = document.getElementById('consoleBody');
+
+  if (state.consoleTab === 'logs') {
+    const f = state.filters.logs;
+    let rows = state.logs;
+    if (f.levels.size > 0) rows = rows.filter(l => f.levels.has(l.level));
+    if (f.stages.size > 0) rows = rows.filter(l => l.stageName && f.stages.has(l.stageName));
+    if (f.text.trim()) {
+      const q = f.text.toLowerCase();
+      rows = rows.filter(l => (l.msg + ' ' + (l.stageName || '')).toLowerCase().includes(q));
+    }
+    if (rows.length === 0) {
+      body.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-dim);font-size:11px;">No matching logs.</div>`;
+      return;
+    }
+    body.innerHTML = rows.map((l, i) => logLineHtml(l, i)).join('');
+    wireLogLinks(body);
+  } else if (state.consoleTab === 'errors') {
+    const f = state.filters.errors;
+    let rows = state.logs.filter(l => l.level === 'error');
+    if (f.stages.size > 0) rows = rows.filter(l => l.stageName && f.stages.has(l.stageName));
+    if (f.text.trim()) {
+      const q = f.text.toLowerCase();
+      rows = rows.filter(l => (l.msg + ' ' + (l.stageName || '')).toLowerCase().includes(q));
+    }
+    if (rows.length === 0) {
+      body.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-dim);font-size:11px;">No matching errors. ✓</div>`;
+      return;
+    }
+    body.innerHTML = rows.map(l => logLineHtml(l)).join('');
+    wireLogLinks(body);
+  } else if (state.consoleTab === 'audit') {
+    const f = state.filters.audit;
+    let rows = state.audit;
+    if (f.statuses.size > 0) rows = rows.filter(a => f.statuses.has(a.status));
+    if (f.blocks.size > 0)   rows = rows.filter(a => f.blocks.has(a.block));
+    if (f.stages.size > 0)   rows = rows.filter(a => f.stages.has(a.stage));
+    if (f.text.trim()) {
+      const q = f.text.toLowerCase();
+      rows = rows.filter(a => JSON.stringify(a).toLowerCase().includes(q));
+    }
+    if (rows.length === 0) {
+      body.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-dim);font-size:11px;">No matching audit records. Run the pipeline or adjust filters.</div>`;
+      return;
+    }
+    body.innerHTML = `
+      <table class="audit-table">
+        <thead>
+          <tr>
+            <th>#</th><th>Stage</th><th>Block</th><th>Status</th>
+            <th>Input</th><th>Output</th><th>Duration</th><th>Credits</th><th>Started</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((a, i) => `
+            <tr class="audit-row" data-stage-id="${a.stageId || ''}" data-block="${a.block}">
+              <td style="color:var(--text-faint)">${i + 1}</td>
+              <td><span class="stage-link" data-stage-id="${a.stageId || ''}" data-block="${a.block}">${escapeHtml(a.stage)}</span></td>
+              <td><span class="block-ref ${a.block}" data-stage-id="${a.stageId || ''}" data-block="${a.block}">${a.block}</span></td>
+              <td><span class="badge ${a.status}">${a.status}</span></td>
+              <td><span class="json-snippet" title="${escapeAttr(JSON.stringify(a.input))}">${escapeHtml(JSON.stringify(a.input))}</span></td>
+              <td><span class="json-snippet" title="${escapeAttr(JSON.stringify(a.output))}">${escapeHtml(JSON.stringify(a.output))}</span></td>
+              <td>${a.duration}ms</td>
+              <td>${a.credits}</td>
+              <td style="color:var(--text-faint);font-size:10px">${a.startedAt}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+    body.querySelectorAll('.audit-row').forEach(tr => {
+      tr.addEventListener('click', () => {
+        const sid = tr.dataset.stageId;
+        const block = tr.dataset.block;
+        if (sid) selectStage(sid, { tab: 'io' });
+      });
+    });
+    body.querySelectorAll('.stage-link, .block-ref').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const sid = el.dataset.stageId;
+        const block = el.dataset.block;
+        if (sid) selectStage(sid, { tab: 'code', block });
+      });
+    });
+  }
+}
+
+function logLineHtml(l) {
+  const stageCell = l.stageId
+    ? `<span class="log-stage" data-stage-id="${l.stageId}" data-block="${l.block || ''}">${escapeHtml(l.stageName)}${l.block ? ' · ' + l.block : ''}</span>`
+    : (l.stageName ? `<span class="log-stage no-link">${escapeHtml(l.stageName)}</span>` : `<span class="log-stage no-link">—</span>`);
+  return `
+    <div class="log-line ${l.level}">
+      <span class="log-time">${l.time}</span>
+      <span class="log-level ${l.level}">${l.level}</span>
+      ${stageCell}
+      <span class="log-msg">${formatLogMsg(l.msg)}</span>
+    </div>`;
+}
+
+function wireLogLinks(root) {
+  root.querySelectorAll('.log-stage[data-stage-id]').forEach(el => {
+    el.addEventListener('click', () => {
+      const sid = el.dataset.stageId;
+      const block = el.dataset.block;
+      if (sid) selectStage(sid, { tab: block ? 'code' : 'io', block });
+    });
+  });
+  root.querySelectorAll('.log-msg .stage-ref').forEach(el => {
+    el.addEventListener('click', () => {
+      const sid = el.dataset.stage;
+      const block = el.dataset.block;
+      if (sid) selectStage(sid, { tab: block ? 'code' : 'io', block });
+    });
+  });
+  root.querySelectorAll('.log-msg .block-ref').forEach(el => {
+    el.addEventListener('click', () => {
+      const sid = el.dataset.stage;
+      const block = el.dataset.block;
+      if (sid) selectStage(sid, { tab: 'code', block });
+    });
+  });
+}
+
+function formatLogMsg(msg) {
+  // Leave already-rendered HTML (stage-ref / block-ref) intact; escape pure-JSON content via lightweight pass
+  // Since log() callers may pass HTML for refs, we DO NOT escape the whole message.
+  return msg
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+
+// ============== EXECUTION ENGINE ==============
+async function runPipeline() {
+  if (state.running) return;
+  if (state.stages.length === 0) {
+    log('warn', null, 'Pipeline is empty — add a stage to begin.');
+    return;
+  }
+  state.running = true;
+  state.startTime = performance.now();
+  state.logs = [];
+  state.audit = [];
+
+  state.stages.forEach(s => {
+    s.state = 'idle';
+    s.lastDuration = null;
+    s.lastCredits = null;
+    s.lastInput = null;
+    s.lastOutput = null;
+    s.lastError = null;
+    s.lastErrorBlock = null;
+    s.sectionStates = { pre: 'idle', task: 'idle', post: 'idle' };
+    s.sectionStats = {
+      pre:  { duration: null, credits: null, input: null, output: null, error: null, attempts: 0 },
+      task: { duration: null, credits: null, input: null, output: null, error: null, attempts: 0 },
+      post: { duration: null, credits: null, input: null, output: null, error: null, attempts: 0 },
+    };
+  });
+
+  setPipelineStatus('running');
+  log('system', null, '═══ Pipeline execution started ═══');
+  log('info',   null, `Loaded ${state.variables.length} variable(s) into context`);
+  renderPipeline();
+
+  let payload = {
+    order_id: 'ORD-' + Math.floor(Math.random() * 9000 + 1000),
+    order_amount: Math.floor(Math.random() * 1500 + 200),
+    customer: 'jane@example.com',
+  };
+  log('info', null, `Trigger payload: <code>${escapeHtml(JSON.stringify(payload))}</code>`);
+
+  let totalCredits = 0;
+  let pipelineFailed = false;
+
+  for (let i = 0; i < state.stages.length; i++) {
+    const stage = state.stages[i];
+    if (pipelineFailed) {
+      stage.state = 'skipped';
+      log('warn', stage, `Skipped ${stageRef(stage)} — earlier stage failed`);
+      renderPipeline();
+      continue;
+    }
+
+    stage.lastInput = JSON.parse(JSON.stringify(payload));
+    stage.state = 'running';
+    renderPipeline();
+    log('info', stage, `▶ ${stageRef(stage)} starting — input: <code>${escapeHtml(JSON.stringify(payload))}</code>`);
+
+    const stageStart = performance.now();
+    let stageCredits = 0;
+
+    try {
+      // ----- PRE-HANDLER -----
+      if (stage.pre.enabled) {
+        stage.sectionStates.pre = 'running';
+        stage.sectionStats.pre.input = payload;
+        renderPipeline();
+        log('info', { ...stage, block: 'pre' }, `⊢ ${stageRef(stage, 'pre')} executing…`);
+        const preStart = performance.now();
+        await simulateAsync(150, 400);
+        const preResult = simulatePreHandler(stage, payload);
+        const preDur = Math.round(performance.now() - preStart);
+        const preCredits = 1;
+        stageCredits += preCredits;
+
+        stage.sectionStats.pre.duration = preDur;
+        stage.sectionStats.pre.credits = preCredits;
+        stage.sectionStats.pre.output = { proceed: preResult };
+
+        state.audit.push({
+          stage: stage.name, stageId: stage.id, block: 'pre',
+          status: preResult ? 'success' : 'skipped',
+          input: { ctx_input: payload, vars: varsToObject() },
+          output: { proceed: preResult },
+          duration: preDur, credits: preCredits,
+          startedAt: nowTimeStr(),
+        });
+
+        if (!preResult) {
+          stage.sectionStates.pre = 'skipped';
+          stage.sectionStates.task = 'skipped';
+          stage.sectionStates.post = 'skipped';
+          stage.state = 'skipped';
+          stage.lastDuration = Math.round(performance.now() - stageStart);
+          stage.lastCredits = stageCredits;
+          stage.lastOutput = { skipped: true, reason: 'pre-handler returned false' };
+          log('warn', { ...stage, block: 'pre' }, `⊢ ${stageRef(stage, 'pre')} returned false — skipping stage`);
+          renderPipeline();
+          if (state.selectedStageId === stage.id) renderInspector();
+          continue;
+        }
+        stage.sectionStates.pre = 'success';
+        log('success', { ...stage, block: 'pre' }, `⊢ ${stageRef(stage, 'pre')} passed in ${preDur}ms (${preCredits} cr)`);
+        renderPipeline();
+        if (state.selectedStageId === stage.id) renderInspector();
+      }
+
+      // ----- TASK (with retries) -----
+      stage.sectionStates.task = 'running';
+      stage.sectionStats.task.input = payload;
+      renderPipeline();
+      const maxRetries = Math.min(5, Math.max(0, Number(stage.maxRetries) || 0));
+      const maxAttempts = maxRetries + 1;
+      let attempt = 0;
+      let taskResult;
+      let taskDur = 0;
+      let taskCredits = 0;
+      let taskAccumulatedCredits = 0;
+      while (true) {
+        attempt++;
+        stage.sectionStats.task.attempts = attempt;
+        const attemptLabel = maxRetries > 0
+          ? ` (attempt ${attempt}/${maxAttempts})`
+          : '';
+        log('info', { ...stage, block: 'task' }, `∂ ${stageRef(stage, 'task')} executing async…${attemptLabel}`);
+        const taskStart = performance.now();
+        try {
+          await simulateAsync(400, 1100);
+          taskResult = simulateTask(stage, payload, i);
+          taskDur = Math.round(performance.now() - taskStart);
+          const thisCredits = 2 + Math.floor(Math.random() * 3);
+          taskAccumulatedCredits += thisCredits;
+          taskCredits = thisCredits;
+          stageCredits += thisCredits;
+          break; // success
+        } catch (taskErr) {
+          taskDur = Math.round(performance.now() - taskStart);
+          const failCredits = 1; // partial cost on failure
+          taskAccumulatedCredits += failCredits;
+          stageCredits += failCredits;
+          taskErr.block = 'task';
+          taskErr.elapsed = taskDur;
+
+          if (attempt < maxAttempts) {
+            state.audit.push({
+              stage: stage.name, stageId: stage.id, block: 'task',
+              status: 'retry',
+              input: payload,
+              output: { error: taskErr.message },
+              duration: taskDur, credits: failCredits,
+              attempt, maxAttempts,
+              startedAt: nowTimeStr(),
+            });
+            log('warn', { ...stage, block: 'task' }, `↻ ${stageRef(stage, 'task')} failed (attempt ${attempt}/${maxAttempts}) — ${escapeHtml(taskErr.message)} — retrying…`);
+            // brief backoff
+            await simulateAsync(200, 500);
+            continue;
+          }
+          // exhausted retries — bubble up (outer catch will audit the final error)
+          taskErr.attempts = attempt;
+          taskErr.maxAttempts = maxAttempts;
+          throw taskErr;
+        }
+      }
+
+      stage.sectionStates.task = 'success';
+      stage.sectionStats.task.duration = taskDur;
+      stage.sectionStats.task.credits = taskAccumulatedCredits;
+      stage.sectionStats.task.output = taskResult;
+      stage.lastOutput = taskResult;
+      const retryNote = attempt > 1 ? ` after ${attempt - 1} retry${attempt - 1 > 1 ? 's' : ''}` : '';
+      log('success', { ...stage, block: 'task' }, `∂ ${stageRef(stage, 'task')} completed in ${taskDur}ms (${taskCredits} cr)${retryNote} → <code>${escapeHtml(JSON.stringify(taskResult))}</code>`);
+
+      state.audit.push({
+        stage: stage.name, stageId: stage.id, block: 'task',
+        status: 'success',
+        input: payload,
+        output: taskResult,
+        duration: taskDur, credits: taskCredits,
+        attempt, maxAttempts,
+        startedAt: nowTimeStr(),
+      });
+
+      payload = taskResult;
+      renderPipeline();
+      if (state.selectedStageId === stage.id) renderInspector();
+
+      // ----- POST-HANDLER -----
+      if (stage.post.enabled) {
+        stage.sectionStates.post = 'running';
+        stage.sectionStats.post.input = taskResult;
+        renderPipeline();
+        log('info', { ...stage, block: 'post' }, `⊣ ${stageRef(stage, 'post')} executing…`);
+        const postStart = performance.now();
+        await simulateAsync(100, 300);
+        const postDur = Math.round(performance.now() - postStart);
+        const postCredits = 1;
+        stageCredits += postCredits;
+        stage.sectionStates.post = 'success';
+        stage.sectionStats.post.duration = postDur;
+        stage.sectionStats.post.credits = postCredits;
+        stage.sectionStats.post.output = { committed: true };
+        log('success', { ...stage, block: 'post' }, `⊣ ${stageRef(stage, 'post')} completed in ${postDur}ms (${postCredits} cr)`);
+
+        state.audit.push({
+          stage: stage.name, stageId: stage.id, block: 'post',
+          status: 'success',
+          input: taskResult,
+          output: { committed: true },
+          duration: postDur, credits: postCredits,
+          startedAt: nowTimeStr(),
+        });
+        if (state.selectedStageId === stage.id) renderInspector();
+      }
+
+      stage.state = 'success';
+      stage.lastDuration = Math.round(performance.now() - stageStart);
+      stage.lastCredits = stageCredits;
+      totalCredits += stageCredits;
+
+      log('success', stage, `✓ ${stageRef(stage)} finished in ${stage.lastDuration}ms (${stageCredits} cr total)`);
+      renderPipeline();
+
+    } catch (err) {
+      const stageDur = Math.round(performance.now() - stageStart);
+      stage.state = 'error';
+      const errBlock = err.block || 'task';
+      stage.sectionStates[errBlock] = 'error';
+      stage.sectionStats[errBlock].error = { message: err.message };
+      stage.sectionStats[errBlock].duration = err.elapsed || null;
+      stage.lastDuration = stageDur;
+      stage.lastCredits = stageCredits;
+      stage.lastErrorBlock = errBlock;
+      stage.lastError = {
+        message: err.message || String(err),
+        stack: err.stack || `at deluge.${errBlock} (stage: ${stage.name})\n  → input: ${JSON.stringify(payload)}`,
+        hint: err.hint || 'Inspect the input payload — required keys may be missing.',
+      };
+      stage.lastOutput = null;
+      totalCredits += stageCredits;
+      pipelineFailed = true;
+
+      log('error', { ...stage, block: errBlock }, `✗ ${stageRef(stage, errBlock)}${err.attempts ? ` (exhausted ${err.attempts}/${err.maxAttempts} attempts)` : ''} — ${escapeHtml(err.message)}`);
+      log('error', { ...stage, block: errBlock }, `   at line ${err.line || '?'} — context: <code>${escapeHtml(JSON.stringify(payload))}</code>`);
+      if (err.hint) log('warn', { ...stage, block: errBlock }, `   💡 Hint: ${escapeHtml(err.hint)}`);
+
+      state.audit.push({
+        stage: stage.name, stageId: stage.id, block: errBlock,
+        status: 'error',
+        input: payload,
+        output: { error: err.message },
+        duration: stageDur, credits: stageCredits,
+        startedAt: nowTimeStr(),
+      });
+      renderPipeline();
+      if (state.selectedStageId === stage.id) renderInspector();
+    }
+
+    document.getElementById('creditsUsed').textContent = totalCredits;
+    document.getElementById('totalDuration').textContent =
+      Math.round(performance.now() - state.startTime) + 'ms';
+  }
+
+  const totalDur = Math.round(performance.now() - state.startTime);
+  if (pipelineFailed) {
+    setPipelineStatus('error');
+    log('error', null, `═══ Pipeline failed after ${totalDur}ms — ${totalCredits} credits consumed ═══`);
+  } else {
+    setPipelineStatus('success');
+    log('success', null, `═══ Pipeline finished cleanly in ${totalDur}ms — ${totalCredits} credits consumed ═══`);
+  }
+  state.running = false;
+  if (state.selectedStageId) renderInspector();
+}
+
+function simulatePreHandler(stage, payload) {
+  if (stage.name === 'Fetch Customer' && payload.order_amount != null) {
+    const threshold = parseFloat(state.variables.find(v => v.key === 'MIN_ORDER_AMT')?.value || '0');
+    if (payload.order_amount < threshold) return false;
+  }
+  return true;
+}
+function simulateTask(stage, payload, idx) {
+  if (stage.name.toLowerCase().includes('charge') && Math.random() < 0.25) {
+    const e = new Error('Payment gateway returned 402 — card declined');
+    e.line = 14;
+    e.block = 'task';
+    e.hint = 'Verify the customer\'s payment method is on file and the amount is positive.';
+    throw e;
+  }
+  if (stage.name.toLowerCase().includes('validate')) {
+    if (payload.order_amount == null) {
+      const e = new Error('Missing required field: order_amount');
+      e.line = 7;
+      e.block = 'task';
+      e.hint = 'Ensure your trigger source includes the order_amount field.';
+      throw e;
+    }
+    return { ...payload, valid: true };
+  }
+  if (stage.name.toLowerCase().includes('fetch')) {
+    return {
+      ...payload,
+      customer_name: 'Jane Smith',
+      tier: 'gold',
+      total: payload.order_amount,
+    };
+  }
+  if (stage.name.toLowerCase().includes('charge')) {
+    return {
+      ...payload,
+      charge_id: 'ch_' + Math.floor(Math.random() * 9000 + 1000),
+      status: 'captured',
+    };
+  }
+  if (stage.name.toLowerCase().includes('notify')) {
+    return { ...payload, notified: true, channel: 'email' };
+  }
+  return { ...payload, [`stage_${idx + 1}_done`]: true };
+}
+
+function setPipelineStatus(status) {
+  const el = document.getElementById('pipelineStatus');
+  const label = { idle: 'IDLE', running: 'RUNNING…', success: 'COMPLETED', error: 'FAILED' }[status];
+  el.innerHTML = `<span class="stage-status-dot ${status}" style="width:6px;height:6px;"></span><span style="font-size: 10px;">${label}</span>`;
+}
+
+// ============== HELPERS ==============
+function pad(n) { return String(n).padStart(2, '0'); }
+function nowTimeStr() {
+  const t = new Date();
+  return `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
+}
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+function prettyJson(o) {
+  if (o == null) return 'null';
+  try { return JSON.stringify(o, null, 2); } catch { return String(o); }
+}
+function varsToObject() {
+  const o = {};
+  state.variables.forEach(v => o[v.key] = v.value);
+  return o;
+}
+async function simulateAsync(min, max) {
+  await new Promise(r => setTimeout(r, min + Math.random() * (max - min)));
+}
+
+// ============== EVENT WIRING ==============
+// Theme picker — built & wired by utils.js initThemeSwitcher()
+initThemeSwitcher();
+state.theme = document.body.getAttribute('data-theme');
+document.addEventListener('themechange', (e) => {
+  state.theme = e.detail.theme;
+  // Re-mount monaco editors so they pick up theme
+  if (typeof monacoReady !== 'undefined' && monacoReady && state.inspectorTab === 'code' && getSelectedStage()) {
+    mountOpenEditors(getSelectedStage());
+  }
+});
+
+// Layout toggle
+document.getElementById('layoutToggle').addEventListener('click', e => {
+  const btn = e.target.closest('.layout-btn');
+  if (!btn) return;
+  document.querySelectorAll('.layout-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  state.layout = btn.dataset.layout;
+  renderPipeline();
+});
+
+document.getElementById('addVarBtn').addEventListener('click', () => {
+  state.variables.push({ key: '', value: '' });
+  renderVars();
+});
+
+document.getElementById('runBtn').addEventListener('click', runPipeline);
+document.getElementById('resetBtn').addEventListener('click', () => {
+  state.stages.forEach(s => {
+    s.state = 'idle';
+    s.lastDuration = null;
+    s.lastCredits = null;
+    s.lastInput = null;
+    s.lastOutput = null;
+    s.lastError = null;
+    s.lastErrorBlock = null;
+    s.sectionStates = { pre: 'idle', task: 'idle', post: 'idle' };
+    s.sectionStats = {
+      pre:  { duration: null, credits: null, input: null, output: null, error: null },
+      task: { duration: null, credits: null, input: null, output: null, error: null },
+      post: { duration: null, credits: null, input: null, output: null, error: null },
+    };
+  });
+  state.logs = [];
+  state.audit = [];
+  setPipelineStatus('idle');
+  document.getElementById('creditsUsed').textContent = '0';
+  document.getElementById('totalDuration').textContent = '0ms';
+  renderPipeline(); renderInspector(); renderConsole();
+  log('system', null, 'Pipeline reset');
+});
+
+document.getElementById('inspectorTabs').addEventListener('click', e => {
+  const t = e.target.closest('.insp-tab');
+  if (!t) return;
+  state.inspectorTab = t.dataset.tab;
+  renderInspector();
+});
+
+document.getElementById('consoleTabs').addEventListener('click', e => {
+  e.stopPropagation();
+  const t = e.target.closest('.console-tab');
+  if (!t) return;
+  document.querySelectorAll('.console-tab').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  state.consoleTab = t.dataset.tab;
+  renderConsole();
+});
+
+document.getElementById('consoleHeader').addEventListener('click', () => {
+  const w = document.getElementById('consoleWrap');
+  if (w.classList.contains('open')) {
+    w.classList.remove('open'); w.classList.add('collapsed');
+    document.getElementById('consoleTitle').textContent = '▸ Console';
+  } else {
+    w.classList.remove('collapsed'); w.classList.add('open');
+    document.getElementById('consoleTitle').textContent = '▾ Console';
+  }
+});
+
+document.getElementById('clearLogsBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  state.logs = [];
+  state.audit = [];
+  renderConsole();
+});
+
+// ============== RESIZE INSPECTOR ==============
+(function setupResize() {
+  const handle = document.getElementById('resizeHandle');
+  const main = document.getElementById('mainGrid');
+  const MIN = 320;
+  const MAX_GAP = 360; // leave at least this much for canvas
+
+  function setWidth(w) {
+    state.inspectorWidth = w;
+    main.style.setProperty('--insp-w', w + 'px');
+    handle.style.right = w + 'px';
+    // Trigger monaco layout
+    setTimeout(() => {
+      Object.values(monacoEditors).forEach(ed => {
+        try { ed.layout(); } catch(e) {}
+      });
+    }, 0);
+  }
+  setWidth(state.inspectorWidth);
+
+  let dragging = false;
+  handle.addEventListener('mousedown', (e) => {
+    dragging = true;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const winW = window.innerWidth;
+    let w = winW - e.clientX;
+    w = Math.max(MIN, Math.min(winW - MAX_GAP - 240, w));
+    setWidth(w);
+  });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
+
+// ============== RESIZE LEFT PANEL ==============
+(function setupLeftResize() {
+  const handle = document.getElementById('resizeHandleLeft');
+  const main = document.getElementById('mainGrid');
+  const MIN = 200;
+  const MAX = 500;
+
+  function setWidth(w) {
+    main.style.setProperty('--left-w', w + 'px');
+    handle.style.left = w + 'px';
+    setTimeout(() => {
+      Object.values(monacoEditors).forEach(ed => {
+        try { ed.layout(); } catch(e) {}
+      });
+    }, 0);
+  }
+
+  let dragging = false;
+  handle.addEventListener('mousedown', (e) => {
+    dragging = true;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    let w = e.clientX;
+    w = Math.max(MIN, Math.min(MAX, w));
+    setWidth(w);
+  });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
+
+// ============== RESIZE CONSOLE ==============
+(function setupConsoleResize() {
+  const handle = document.getElementById('consoleResizeHandle');
+  const consoleWrap = document.getElementById('consoleWrap');
+  const MIN = 100;
+  const MAX_RATIO = 0.7;
+
+  let dragging = false;
+  handle.addEventListener('mousedown', (e) => {
+    if (consoleWrap.classList.contains('collapsed')) return;
+    dragging = true;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const winH = window.innerHeight;
+    let h = winH - e.clientY;
+    h = Math.max(MIN, Math.min(winH * MAX_RATIO, h));
+    consoleWrap.style.setProperty('--console-h', h + 'px');
+  });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
+
+// ============== BOOT ==============
+seedPipeline();
+renderVars();
+renderTemplates();
+renderPipeline();
+renderInspector();
+log('system', null, 'Deluge Pipeline Builder ready. Click a stage to inspect, or hit Run Pipeline.');
+log('info',   null, `Loaded ${state.stages.length} stages, ${state.variables.length} variables.`);
+
+</script>
+</body>
+</html>

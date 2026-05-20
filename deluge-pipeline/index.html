@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Deluge · Pipeline Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./css/theme.css">
+<link rel="stylesheet" href="./css/dashboard.css">
+</head>
+<body data-theme="dark">
+  <div class="app">
+
+    <!-- ========= TOPBAR ========= -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">
+          <img src="./assets/Deluge.png" alt="Deluge" style="width:100%;height:100%;object-fit:contain">
+        </div>
+        <div><div class="brand-name">Deluge Pipeline</div></div>
+        <span class="brand-tag">PROTO · v0.3</span>
+      </div>
+      <div class="topbar-actions">
+        <!-- Theme switcher -->
+        <div id="themePicker"></div>
+        <button class="btn btn-primary" id="newPipelineBtn">
+          <svg class="icon-svg" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Pipeline
+        </button>
+      </div>
+    </header>
+
+    <!-- ========= BODY ========= -->
+    <div style="display:flex; flex-direction:column; overflow:hidden;">
+      <!-- Stats row -->
+      <div class="stats-row" id="statsRow"></div>
+
+      <!-- Main content -->
+      <div class="dashboard-body">
+        <!-- Pipeline list -->
+        <div class="pipeline-list-section">
+          <div class="list-header">
+            <input type="text" class="search-input" id="searchInput" placeholder="Search pipelines…" />
+          </div>
+          <div class="pipeline-list" id="pipelineList"></div>
+        </div>
+
+        <!-- Central Audit Feed -->
+        <div class="audit-section">
+          <div class="audit-header">
+            <span>Audit Feed</span>
+            <span style="font-size:9px;font-weight:400;color:var(--text-faint)" id="auditCount"></span>
+          </div>
+          <div class="audit-filters" id="auditFilters"></div>
+          <div class="audit-feed" id="auditFeed"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========= CREATE PIPELINE MODAL ========= -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Create New Pipeline</span>
+        <button class="modal-close" id="modalClose">×</button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <div class="field-group">
+          <label class="field-label">Pipeline Name</label>
+          <input class="field-input" id="plName" placeholder="e.g. Order Fulfillment Flow" />
+        </div>
+        <div class="field-group">
+          <label class="field-label">Description</label>
+          <textarea class="field-textarea" id="plDesc" placeholder="What does this pipeline do?"></textarea>
+        </div>
+
+        <label class="field-label" style="margin-bottom:10px">Trigger Type</label>
+        <div class="trigger-grid" id="triggerGrid"></div>
+
+        <!-- Dynamic trigger config -->
+        <div class="trigger-config hidden" id="triggerConfig"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="modalCancel">Cancel</button>
+        <button class="btn btn-primary" id="modalCreate">Create Pipeline</button>
+      </div>
+    </div>
+  </div>
+
+<script src="./js/store.js"></script>
+<script src="./js/utils.js"></script>
+<script>
+/* ==========================================================================
+   DASHBOARD CONTROLLER
+   ========================================================================== */
+
+// Builder location relative to this index page
+const BUILDER_URL = './pages/builder.html';
+
+// Init
+PipelineStore.seedIfEmpty();
+initThemeSwitcher();
+
+const TRIGGERS = [
+  { type: 'webhook',   icon: '⌁', name: 'Webhook',       desc: 'HTTP endpoint callback' },
+  { type: 'scheduled', icon: '⏱', name: 'Scheduled',     desc: 'Cron / recurring timer' },
+  { type: 'record',    icon: '◎', name: 'Record Change', desc: 'CRM record CRUD event' },
+  { type: 'event',     icon: '⚡', name: 'Event-Based',   desc: 'Pub/sub event channel' },
+  { type: 'queue',     icon: '⇥', name: 'Message Queue', desc: 'Kafka / RabbitMQ / SQS' },
+  { type: 'manual',    icon: '▷', name: 'Manual / API',  desc: 'On-demand via cURL' },
+];
+
+let searchQuery = '';
+let auditFilter = { status: null, trigger: null };
+let selectedTrigger = null;
+let triggerFormState = {};
+
+// ============== RENDER STATS ==============
+function renderStats() {
+  const stats = PipelineStore.getStats();
+  document.getElementById('statsRow').innerHTML = `
+    <div class="stat-card"><div class="stat-card-label">Total Pipelines</div><div class="stat-card-value">${stats.total}</div></div>
+    <div class="stat-card"><div class="stat-card-label">Active</div><div class="stat-card-value">${stats.active}</div></div>
+    <div class="stat-card"><div class="stat-card-label">Total Errors</div><div class="stat-card-value warn">${stats.totalErrors}</div></div>
+    <div class="stat-card"><div class="stat-card-label">Credits Used</div><div class="stat-card-value">${stats.totalCredits}</div></div>
+  `;
+}
+
+// ============== RENDER PIPELINE LIST ==============
+function renderPipelineList() {
+  const list = PipelineStore.getAll();
+  const q = searchQuery.toLowerCase();
+  const filtered = q
+    ? list.filter(p => (p.name + ' ' + p.desc + ' ' + p.trigger.type).toLowerCase().includes(q))
+    : list;
+
+  const container = document.getElementById('pipelineList');
+  if (filtered.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="symbol">∅</div><div class="text">No pipelines found.<br/>Create one to get started.</div></div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map(p => `
+    <div class="pipeline-row" data-id="${p.id}">
+      <div class="trigger-icon">${triggerIcon(p.trigger.type)}</div>
+      <div class="pl-info">
+        <div class="pl-name">${escapeHtml(p.name)}</div>
+        <div class="pl-desc">${escapeHtml(p.desc)}</div>
+        <div class="pl-stats">
+          <span><b>${p.totalRuns}</b> runs</span>
+          <span><b>${p.totalErrors}</b> errors</span>
+          <span>${relativeTime(p.lastRun)}</span>
+        </div>
+      </div>
+      <div class="pl-meta">
+        <div class="pl-meta-top">
+          <span class="trigger-badge ${p.trigger.type}">${triggerIcon(p.trigger.type)} ${triggerLabel(p.trigger.type)}</span>
+          <span class="status-dot ${p.status}" title="${p.status}"></span>
+        </div>
+        <div class="pl-actions">
+          <button class="btn" style="padding:4px 10px;font-size:10px" data-action="open" data-id="${p.id}">Open</button>
+          <button class="btn btn-danger" style="padding:4px 10px;font-size:10px" data-action="delete" data-id="${p.id}">Delete</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  // Wire clicks
+  container.querySelectorAll('.pipeline-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('[data-action]')) return;
+      openPipeline(row.dataset.id);
+    });
+  });
+  container.querySelectorAll('[data-action="open"]').forEach(btn => {
+    btn.addEventListener('click', () => openPipeline(btn.dataset.id));
+  });
+  container.querySelectorAll('[data-action="delete"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (confirm('Delete this pipeline?')) {
+        PipelineStore.remove(btn.dataset.id);
+        renderAll();
+      }
+    });
+  });
+}
+
+function openPipeline(id) {
+  // Navigate to builder with pipeline id
+  window.location.href = `${BUILDER_URL}?id=${id}`;
+}
+
+// ============== RENDER AUDIT FEED ==============
+function renderAuditFeed() {
+  const audit = PipelineStore.getAudit(auditFilter);
+  document.getElementById('auditCount').textContent = `${audit.length} entries`;
+
+  // Filters
+  const filtersEl = document.getElementById('auditFilters');
+  filtersEl.innerHTML = `
+    <span class="audit-chip ${auditFilter.status === 'success' ? 'active' : ''}" data-status="success">success</span>
+    <span class="audit-chip ${auditFilter.status === 'error' ? 'active err' : ''}" data-status="error">error</span>
+    <span style="width:1px;background:var(--border);margin:0 4px"></span>
+    ${TRIGGERS.map(t => `<span class="audit-chip ${auditFilter.trigger === t.type ? 'active' : ''}" data-trigger="${t.type}">${t.icon} ${t.name}</span>`).join('')}
+  `;
+  filtersEl.querySelectorAll('[data-status]').forEach(c => {
+    c.addEventListener('click', () => {
+      auditFilter.status = auditFilter.status === c.dataset.status ? null : c.dataset.status;
+      renderAuditFeed();
+    });
+  });
+  filtersEl.querySelectorAll('[data-trigger]').forEach(c => {
+    c.addEventListener('click', () => {
+      auditFilter.trigger = auditFilter.trigger === c.dataset.trigger ? null : c.dataset.trigger;
+      renderAuditFeed();
+    });
+  });
+
+  // Feed
+  const feed = document.getElementById('auditFeed');
+  if (audit.length === 0) {
+    feed.innerHTML = `<div class="empty-state"><div class="symbol">○</div><div class="text">No audit entries match your filters.</div></div>`;
+    return;
+  }
+
+  feed.innerHTML = audit.map(a => `
+    <div class="audit-entry" data-pipeline-id="${a.pipelineId}">
+      <div class="audit-entry-top">
+        <span class="audit-entry-name">${escapeHtml(a.pipelineName)}</span>
+        <span class="audit-entry-time">${relativeTime(a.timestamp)}</span>
+      </div>
+      <div class="audit-entry-msg">${escapeHtml(a.message)}</div>
+      <div class="audit-entry-tags">
+        <span class="audit-tag ${a.status}">${a.status}</span>
+        <span class="audit-tag">${triggerIcon(a.trigger)} ${a.trigger}</span>
+        <span class="audit-tag">${a.stageCount} stages</span>
+        <span class="audit-tag">${a.duration}ms</span>
+        <span class="audit-tag">${a.credits} cr</span>
+      </div>
+    </div>
+  `).join('');
+
+  feed.querySelectorAll('.audit-entry').forEach(entry => {
+    entry.addEventListener('click', () => {
+      openPipeline(entry.dataset.pipelineId);
+    });
+  });
+}
+
+// ============== MODAL: CREATE PIPELINE ==============
+function openModal() {
+  selectedTrigger = null;
+  triggerFormState = {};
+  document.getElementById('plName').value = '';
+  document.getElementById('plDesc').value = '';
+  renderTriggerGrid();
+  document.getElementById('triggerConfig').classList.add('hidden');
+  document.getElementById('triggerConfig').innerHTML = '';
+  document.getElementById('modalOverlay').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('open');
+}
+
+function renderTriggerGrid() {
+  const grid = document.getElementById('triggerGrid');
+  grid.innerHTML = TRIGGERS.map(t => `
+    <div class="trigger-card ${selectedTrigger === t.type ? 'selected' : ''}" data-type="${t.type}">
+      <div class="tc-icon">${t.icon}</div>
+      <div class="tc-name">${t.name}</div>
+      <div class="tc-desc">${t.desc}</div>
+    </div>
+  `).join('');
+
+  grid.querySelectorAll('.trigger-card').forEach(card => {
+    card.addEventListener('click', () => {
+      selectedTrigger = card.dataset.type;
+      triggerFormState = {};
+      renderTriggerGrid();
+      renderTriggerConfig();
+    });
+  });
+}
+
+function renderTriggerConfig() {
+  const panel = document.getElementById('triggerConfig');
+  panel.classList.remove('hidden');
+
+  switch (selectedTrigger) {
+    case 'webhook':
+      const endpoint = `https://hook.deluge.io/pl_${Math.random().toString(36).slice(2, 9)}`;
+      triggerFormState = { endpoint, method: 'POST', mode: 'one-time', pollInterval: 30 };
+      panel.innerHTML = `
+        <div class="field-group">
+          <label class="field-label">Endpoint URL (auto-generated)</label>
+          <div class="endpoint-display">
+            <code id="webhookUrl">${endpoint}</code>
+            <button class="copy-btn" id="copyEndpoint">Copy</button>
+          </div>
+        </div>
+        <div class="field-group">
+          <label class="field-label">HTTP Method</label>
+          <div class="radio-row">
+            <span class="radio-pill active" data-method="POST">POST</span>
+            <span class="radio-pill" data-method="GET">GET</span>
+          </div>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Mode</label>
+          <div class="radio-row" id="webhookMode">
+            <span class="radio-pill active" data-mode="one-time">One-Time Fire</span>
+            <span class="radio-pill" data-mode="polling">Polling</span>
+          </div>
+        </div>
+        <div class="field-group hidden" id="pollIntervalGroup">
+          <label class="field-label">Poll Interval (seconds)</label>
+          <input class="field-input" type="number" id="pollInterval" value="30" min="5" max="3600" />
+        </div>
+      `;
+      document.getElementById('copyEndpoint').addEventListener('click', () => {
+        navigator.clipboard.writeText(endpoint);
+        document.getElementById('copyEndpoint').textContent = 'Copied!';
+        setTimeout(() => document.getElementById('copyEndpoint').textContent = 'Copy', 1500);
+      });
+      panel.querySelectorAll('[data-method]').forEach(p => {
+        p.addEventListener('click', () => {
+          panel.querySelectorAll('[data-method]').forEach(x => x.classList.remove('active'));
+          p.classList.add('active');
+          triggerFormState.method = p.dataset.method;
+        });
+      });
+      document.getElementById('webhookMode').querySelectorAll('[data-mode]').forEach(p => {
+        p.addEventListener('click', () => {
+          document.getElementById('webhookMode').querySelectorAll('[data-mode]').forEach(x => x.classList.remove('active'));
+          p.classList.add('active');
+          triggerFormState.mode = p.dataset.mode;
+          document.getElementById('pollIntervalGroup').classList.toggle('hidden', p.dataset.mode !== 'polling');
+        });
+      });
+      break;
+
+    case 'scheduled':
+      triggerFormState = { recurrence: 'daily', time: '06:00', timezone: 'UTC', days: [], cron: '', startDate: '', endDate: '' };
+      panel.innerHTML = `
+        <div class="field-group">
+          <label class="field-label">Recurrence</label>
+          <select class="field-select" id="schedRecurrence">
+            <option value="one-time">One-Time</option>
+            <option value="hourly">Hourly</option>
+            <option value="daily" selected>Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="cron">Cron Expression</option>
+          </select>
+        </div>
+        <div class="inline-row">
+          <div class="field-group">
+            <label class="field-label">Time of Day</label>
+            <input class="field-input" type="time" id="schedTime" value="06:00" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Timezone</label>
+            <select class="field-select" id="schedTz">
+              <option value="UTC">UTC</option>
+              <option value="US/Eastern">US Eastern</option>
+              <option value="Asia/Kolkata">IST (India)</option>
+              <option value="Europe/London">UK London</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-group hidden" id="daysGroup">
+          <label class="field-label">Days of Week</label>
+          <div class="day-pills" id="dayPills">
+            <span class="day-pill" data-d="Mon">Mo</span>
+            <span class="day-pill" data-d="Tue">Tu</span>
+            <span class="day-pill" data-d="Wed">We</span>
+            <span class="day-pill" data-d="Thu">Th</span>
+            <span class="day-pill" data-d="Fri">Fr</span>
+            <span class="day-pill" data-d="Sat">Sa</span>
+            <span class="day-pill" data-d="Sun">Su</span>
+          </div>
+        </div>
+        <div class="field-group hidden" id="cronGroup">
+          <label class="field-label">Cron Expression</label>
+          <input class="field-input" id="cronExpr" placeholder="*/15 * * * *" />
+        </div>
+        <div class="inline-row">
+          <div class="field-group">
+            <label class="field-label">Start Date</label>
+            <input class="field-input" type="date" id="schedStart" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">End Date (optional)</label>
+            <input class="field-input" type="date" id="schedEnd" />
+          </div>
+        </div>
+      `;
+      document.getElementById('schedRecurrence').addEventListener('change', (e) => {
+        triggerFormState.recurrence = e.target.value;
+        document.getElementById('daysGroup').classList.toggle('hidden', e.target.value !== 'weekly');
+        document.getElementById('cronGroup').classList.toggle('hidden', e.target.value !== 'cron');
+      });
+      document.getElementById('dayPills').querySelectorAll('.day-pill').forEach(p => {
+        p.addEventListener('click', () => {
+          p.classList.toggle('active');
+          const active = [...document.querySelectorAll('.day-pill.active')].map(x => x.dataset.d);
+          triggerFormState.days = active;
+        });
+      });
+      break;
+
+    case 'record':
+      triggerFormState = { module: 'Leads', action: 'on_create', watchFields: '' };
+      panel.innerHTML = `
+        <div class="field-group">
+          <label class="field-label">CRM Module</label>
+          <select class="field-select" id="recModule">
+            <option>Leads</option>
+            <option>Contacts</option>
+            <option>Deals</option>
+            <option>Accounts</option>
+            <option>Tasks</option>
+            <option>Invoices</option>
+            <option>Products</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Action</label>
+          <select class="field-select" id="recAction">
+            <option value="on_create">On Create</option>
+            <option value="on_edit">On Edit</option>
+            <option value="on_create_edit">On Create or Edit</option>
+            <option value="on_delete">On Delete</option>
+          </select>
+        </div>
+        <div class="field-group" id="watchFieldsGroup">
+          <label class="field-label">Watch Fields (comma-separated, for edit triggers)</label>
+          <input class="field-input" id="watchFields" placeholder="e.g. Stage, Amount, Owner" />
+        </div>
+      `;
+      document.getElementById('recAction').addEventListener('change', (e) => {
+        triggerFormState.action = e.target.value;
+        document.getElementById('watchFieldsGroup').style.display = 
+          e.target.value.includes('edit') ? 'block' : 'none';
+      });
+      break;
+
+    case 'event':
+      triggerFormState = { eventName: '', channel: '' };
+      panel.innerHTML = `
+        <div class="field-group">
+          <label class="field-label">Event Name (dot-notation)</label>
+          <input class="field-input" id="evtName" placeholder="e.g. inventory.low, order.placed" />
+        </div>
+        <div class="field-group">
+          <label class="field-label">Channel / Topic</label>
+          <input class="field-input" id="evtChannel" placeholder="e.g. warehouse-alerts" />
+        </div>
+      `;
+      break;
+
+    case 'queue':
+      triggerFormState = { system: 'kafka', topic: '', consumerGroup: '' };
+      panel.innerHTML = `
+        <div class="field-group">
+          <label class="field-label">Queue System</label>
+          <select class="field-select" id="queueSystem">
+            <option value="kafka">Apache Kafka</option>
+            <option value="rabbitmq">RabbitMQ</option>
+            <option value="sqs">AWS SQS</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Topic / Queue Name</label>
+          <input class="field-input" id="queueTopic" placeholder="e.g. orders.placed" />
+        </div>
+        <div class="field-group">
+          <label class="field-label">Consumer Group</label>
+          <input class="field-input" id="queueCG" placeholder="e.g. analytics-cg" />
+        </div>
+      `;
+      break;
+
+    case 'manual':
+      const token = 'tok_' + Math.random().toString(36).slice(2, 12);
+      const curlCmd = `curl -X POST https://api.deluge.io/run/pl_new \\
+  -H "Authorization: Bearer ${token}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"trigger": "manual"}'`;
+      triggerFormState = { curl: curlCmd };
+      panel.innerHTML = `
+        <div class="field-group">
+          <label class="field-label">cURL Command (auto-generated)</label>
+          <textarea class="field-textarea" style="min-height:90px;font-size:11px;color:var(--accent)" readonly>${curlCmd}</textarea>
+        </div>
+        <p style="font-size:10px;color:var(--text-dim);margin-top:6px">
+          Use this command to trigger the pipeline on-demand. The bearer token is unique to this pipeline.
+        </p>
+      `;
+      break;
+  }
+}
+
+function collectTriggerConfig() {
+  if (!selectedTrigger) return null;
+  const config = { type: selectedTrigger };
+
+  switch (selectedTrigger) {
+    case 'webhook':
+      config.endpoint = triggerFormState.endpoint;
+      config.method = triggerFormState.method || 'POST';
+      config.mode = triggerFormState.mode || 'one-time';
+      if (config.mode === 'polling') {
+        config.pollInterval = parseInt(document.getElementById('pollInterval')?.value || '30');
+      }
+      break;
+    case 'scheduled':
+      config.recurrence = document.getElementById('schedRecurrence')?.value || 'daily';
+      config.time = document.getElementById('schedTime')?.value || '06:00';
+      config.timezone = document.getElementById('schedTz')?.value || 'UTC';
+      config.days = triggerFormState.days || [];
+      config.cron = document.getElementById('cronExpr')?.value || '';
+      config.startDate = document.getElementById('schedStart')?.value || '';
+      config.endDate = document.getElementById('schedEnd')?.value || '';
+      break;
+    case 'record':
+      config.module = document.getElementById('recModule')?.value || 'Leads';
+      config.action = document.getElementById('recAction')?.value || 'on_create';
+      config.watchFields = document.getElementById('watchFields')?.value || '';
+      break;
+    case 'event':
+      config.eventName = document.getElementById('evtName')?.value || '';
+      config.channel = document.getElementById('evtChannel')?.value || '';
+      break;
+    case 'queue':
+      config.system = document.getElementById('queueSystem')?.value || 'kafka';
+      config.topic = document.getElementById('queueTopic')?.value || '';
+      config.consumerGroup = document.getElementById('queueCG')?.value || '';
+      break;
+    case 'manual':
+      config.curl = triggerFormState.curl;
+      break;
+  }
+  return config;
+}
+
+function createPipeline() {
+  const name = document.getElementById('plName').value.trim();
+  if (!name) { alert('Pipeline name is required.'); return; }
+  if (!selectedTrigger) { alert('Select a trigger type.'); return; }
+
+  const trigger = collectTriggerConfig();
+  const pipeline = {
+    name,
+    desc: document.getElementById('plDesc').value.trim(),
+    status: 'draft',
+    trigger,
+    stages: [],
+    stageCount: 0,
+  };
+
+  const created = PipelineStore.create(pipeline);
+  closeModal();
+  renderAll();
+  // Navigate to builder
+  openPipeline(created.id);
+}
+
+// ============== EVENTS ==============
+document.getElementById('newPipelineBtn').addEventListener('click', openModal);
+document.getElementById('modalClose').addEventListener('click', closeModal);
+document.getElementById('modalCancel').addEventListener('click', closeModal);
+document.getElementById('modalCreate').addEventListener('click', createPipeline);
+document.getElementById('modalOverlay').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('modalOverlay')) closeModal();
+});
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  searchQuery = e.target.value;
+  renderPipelineList();
+});
+
+// ============== BOOT ==============
+function renderAll() {
+  renderStats();
+  renderPipelineList();
+  renderAuditFeed();
+}
+renderAll();
+</script>
+</body>
+</html>
