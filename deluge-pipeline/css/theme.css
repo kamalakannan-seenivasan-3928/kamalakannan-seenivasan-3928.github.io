@@ -78,6 +78,16 @@ html { font-size: 16px; }
 /* User density preference (defaults to cozy)
    Each level scales BOTH font-size and the spacing/height tokens so the whole
    UI tightens or loosens together. */
+body[data-density="extreme"] {
+  font-size: calc(var(--fs-base) * 0.68);
+  --s-1: 0.08rem; --s-2: 0.16rem; --s-3: 0.26rem;
+  --s-4: 0.36rem; --s-5: 0.48rem; --s-6: 0.6rem;
+  --s-7: 0.8rem;  --s-8: 1rem;    --s-9: 1.25rem;
+  --topbar-h: clamp(28px, 2vw, 42px);
+  --row-h:    clamp(22px, 1.6vw, 34px);
+  --btn-h:    clamp(18px, 1.25vw, 26px);
+  --btn-h-sm: clamp(14px, 1vw, 22px);
+}
 body[data-density="ultra"] {
   font-size: calc(var(--fs-base) * 0.78);
   --s-1: 0.15rem; --s-2: 0.3rem;  --s-3: 0.45rem;
@@ -558,6 +568,111 @@ input, select, textarea { font-family: inherit; color: inherit; }
   height: 1px;
   background: var(--border);
   margin: 4px 2px;
+}
+.theme-dropdown-slider {
+  padding: var(--s-2) var(--s-3);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  min-width: 180px;
+}
+.theme-dropdown-slider-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85em;
+  color: var(--text-muted, var(--text));
+}
+.theme-dropdown-slider-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  font-weight: 600;
+}
+.theme-dropdown-slider input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+/* Settings modal layout */
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  min-width: 360px;
+  max-width: 460px;
+}
+.settings-accordion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.settings-section {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-elev);
+  overflow: hidden;
+}
+.settings-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  font-size: 0.95em;
+  font-weight: 500;
+  color: var(--text);
+}
+.settings-summary::-webkit-details-marker { display: none; }
+.settings-summary-label { flex: 0 0 auto; }
+.settings-summary-value {
+  flex: 1 1 auto;
+  text-align: right;
+  font-size: 0.85em;
+  color: var(--text-muted, var(--text));
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-summary-caret {
+  transition: transform 0.18s ease;
+  color: var(--text-muted, var(--text));
+}
+.settings-section[open] .settings-summary-caret { transform: rotate(180deg); }
+.settings-section-body {
+  padding: var(--s-2) var(--s-3) var(--s-3);
+  border-top: 1px solid var(--border);
+}
+
+/* Inline-list rendering of pickers inside the settings modal:
+   hide trigger button, force menu to display as a static vertical list. */
+.settings-section .theme-dropdown { width: 100%; }
+.settings-section .theme-dropdown-trigger { display: none; }
+.settings-section .theme-dropdown-menu {
+  position: static;
+  display: block !important;
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  animation: none;
+  box-shadow: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  min-width: 0;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.settings-section .theme-dropdown-item {
+  padding: var(--s-2) var(--s-3);
+  font-size: 0.9em;
+}
+.settings-section .theme-dropdown-slider {
+  margin-top: var(--s-2);
 }
 
 .icon-svg { width: 1em; height: 1em; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }

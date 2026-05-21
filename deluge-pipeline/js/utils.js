@@ -115,12 +115,35 @@ function initThemeSwitcher() {
 // ============== UI DENSITY DROPDOWN ==============
 // Renders into a container with id="densityToggle" — reuses .theme-dropdown styles.
 const DENSITY_OPTIONS = [
+  { value: 'extreme',  label: 'Extreme Compact', icon: '<svg class="icon-svg icon-svg-sm" viewBox="0 0 24 24"><line x1="4" y1="5" x2="20" y2="5"/><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="11" x2="20" y2="11"/><line x1="4" y1="13" x2="20" y2="13"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="4" y1="17" x2="20" y2="17"/><line x1="4" y1="19" x2="20" y2="19"/></svg>' },
   { value: 'ultra',    label: 'Ultra Compact', icon: '<svg class="icon-svg icon-svg-sm" viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="4" y1="18" x2="20" y2="18"/></svg>' },
   { value: 'tight',    label: 'Small Compact', icon: '<svg class="icon-svg icon-svg-sm" viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="4" y1="14" x2="20" y2="14"/><line x1="4" y1="17" x2="20" y2="17"/></svg>' },
   { value: 'compact',  label: 'Compact',       icon: '<svg class="icon-svg icon-svg-sm" viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>' },
   { value: 'cozy',     label: 'Cozy',          icon: '<svg class="icon-svg icon-svg-sm" viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>' },
   { value: 'spacious', label: 'Spacious',      icon: '<svg class="icon-svg icon-svg-sm" viewBox="0 0 24 24"><line x1="4" y1="5" x2="20" y2="5"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="19" x2="20" y2="19"/></svg>' },
+  { value: 'custom',   label: 'Custom…',       separator: true, icon: '<svg class="icon-svg icon-svg-sm" viewBox="0 0 24 24"><line x1="4" y1="8" x2="20" y2="8"/><circle cx="9" cy="8" r="2.2" fill="currentColor"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="15" cy="16" r="2.2" fill="currentColor"/></svg>' },
 ];
+
+// Maps a percent (10–90) into spacing / height / font tokens, written inline on <body>.
+function applyCustomDensity(pct) {
+  pct = Math.min(90, Math.max(10, +pct || 50));
+  const body = document.body;
+  const k = pct / 60; // 60% ≈ cozy baseline
+  const baseS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
+  baseS.forEach((b, i) => body.style.setProperty(`--s-${i + 1}`, (b * k).toFixed(3) + 'rem'));
+  body.style.setProperty('--topbar-h', (48 * k).toFixed(1) + 'px');
+  body.style.setProperty('--row-h',    (38 * k).toFixed(1) + 'px');
+  body.style.setProperty('--btn-h',    (30 * k).toFixed(1) + 'px');
+  body.style.setProperty('--btn-h-sm', (26 * k).toFixed(1) + 'px');
+  const fontScale = 0.7 + ((pct - 10) / 80) * 0.5; // 0.7 .. 1.2
+  body.style.fontSize = `calc(var(--fs-base) * ${fontScale.toFixed(3)})`;
+}
+function clearCustomDensity() {
+  const body = document.body;
+  ['--s-1','--s-2','--s-3','--s-4','--s-5','--s-6','--s-7','--s-8','--s-9',
+   '--topbar-h','--row-h','--btn-h','--btn-h-sm'].forEach(p => body.style.removeProperty(p));
+  body.style.fontSize = '';
+}
 
 function initDensityToggle() {
   const host = document.getElementById('densityToggle');
@@ -131,8 +154,49 @@ function initDensityToggle() {
     storageKey: 'deluge_density',
     defaultValue: 'cozy',
     eventName: 'densitychange',
-    apply: (v) => { document.body.dataset.density = v; },
+    apply: (v) => {
+      if (v === 'custom') {
+        document.body.dataset.density = 'custom';
+        const pct = +localStorage.getItem('deluge_density_custom_pct') || 50;
+        applyCustomDensity(pct);
+      } else {
+        clearCustomDensity();
+        document.body.dataset.density = v;
+      }
+    },
   });
+
+  // Inject a slider row into the dropdown menu, visible only when "custom" is the selected value.
+  const menu = host.querySelector('.theme-dropdown-menu');
+  if (!menu) return;
+  const savedPct = +localStorage.getItem('deluge_density_custom_pct') || 50;
+  const sliderWrap = document.createElement('div');
+  sliderWrap.className = 'theme-dropdown-slider';
+  sliderWrap.innerHTML = `
+    <div class="theme-dropdown-slider-row">
+      <span class="theme-dropdown-slider-label">Scale</span>
+      <span class="theme-dropdown-slider-value" data-pct>${savedPct}%</span>
+    </div>
+    <input type="range" min="10" max="90" step="1" value="${savedPct}" data-density-range />
+  `;
+  menu.appendChild(sliderWrap);
+
+  const range = sliderWrap.querySelector('[data-density-range]');
+  const pctLabel = sliderWrap.querySelector('[data-pct]');
+  range.addEventListener('click', (e) => e.stopPropagation());
+  range.addEventListener('input', () => {
+    const v = +range.value;
+    pctLabel.textContent = v + '%';
+    localStorage.setItem('deluge_density_custom_pct', String(v));
+    if (host.dataset.value === 'custom') applyCustomDensity(v);
+    document.dispatchEvent(new CustomEvent('densitychange', { detail: { value: 'custom', pct: v } }));
+  });
+
+  function syncSliderVisibility() {
+    sliderWrap.style.display = (host.dataset.value === 'custom') ? '' : 'none';
+  }
+  syncSliderVisibility();
+  document.addEventListener('densitychange', syncSliderVisibility);
 }
 
 // ============== FONT FAMILY DROPDOWN ==============
@@ -228,10 +292,45 @@ function _renderGenericDropdown({ host, options, storageKey, defaultValue, event
     const f = localStorage.getItem('deluge_font');
     document.addEventListener('DOMContentLoaded', () => {
       document.body.dataset.density = d || 'cozy';
+      if ((d || 'cozy') === 'custom') {
+        const pct = +localStorage.getItem('deluge_density_custom_pct') || 50;
+        applyCustomDensity(pct);
+      }
       if (f) {
         const opt = FONT_OPTIONS.find(o => o.value === f);
         if (opt) document.documentElement.style.setProperty('--font-ui', opt.stack);
       }
     });
   } catch (_) {}
+})();
+
+// ============== SETTINGS ACCORDION ==============
+// Keeps only one <details> open at a time and mirrors each picker's current
+// selection into the summary's value text.
+(function setupSettingsAccordion() {
+  document.addEventListener('DOMContentLoaded', () => {
+    const acc = document.getElementById('settingsAccordion');
+    if (!acc) return;
+    const sections = Array.from(acc.querySelectorAll('details.settings-section'));
+
+    sections.forEach(sec => {
+      sec.addEventListener('toggle', () => {
+        if (sec.open) sections.forEach(s => { if (s !== sec) s.open = false; });
+      });
+    });
+
+    function refreshSummaries() {
+      acc.querySelectorAll('.settings-summary-value').forEach(el => {
+        const hostId = el.dataset.summaryFor;
+        const host = document.getElementById(hostId);
+        if (!host) return;
+        const selected = host.querySelector('.theme-dropdown-item.selected span:last-child');
+        el.textContent = selected ? selected.textContent : '';
+      });
+    }
+    refreshSummaries();
+    ['themechange', 'fontchange', 'densitychange'].forEach(ev => {
+      document.addEventListener(ev, refreshSummaries);
+    });
+  });
 })();

@@ -54,14 +54,10 @@
           </button>
         </div>
 
-        <!-- Theme switcher (auto-built by initThemeSwitcher) -->
-        <div id="themePicker"></div>
-
-        <!-- Font family picker -->
-        <div id="fontPicker"></div>
-
-        <!-- UI density picker -->
-        <div id="densityToggle"></div>
+        <!-- Settings (theme / font / density moved into modal) -->
+        <button class="btn" id="settingsBtn" title="Settings (theme, font, density)">
+          <svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
 
         <span class="dirty-badge" id="dirtyBadge" title="Pipeline state"></span>
 
@@ -227,6 +223,44 @@
             <div class="add-section-title">Or choose a Template</div>
             <div id="modalTemplateList" class="modal-template-list"></div>
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Settings</div>
+        <button class="modal-close" onclick="document.getElementById('settingsModal').classList.remove('open')">×</button>
+      </div>
+      <div class="modal-body settings-body">
+        <div class="settings-accordion" id="settingsAccordion">
+          <details class="settings-section" open>
+            <summary class="settings-summary">
+              <span class="settings-summary-label">Theme</span>
+              <span class="settings-summary-value" data-summary-for="themePicker"></span>
+              <svg class="icon-svg icon-svg-sm settings-summary-caret" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+            </summary>
+            <div class="settings-section-body"><div id="themePicker"></div></div>
+          </details>
+          <details class="settings-section">
+            <summary class="settings-summary">
+              <span class="settings-summary-label">Font Family</span>
+              <span class="settings-summary-value" data-summary-for="fontPicker"></span>
+              <svg class="icon-svg icon-svg-sm settings-summary-caret" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+            </summary>
+            <div class="settings-section-body"><div id="fontPicker"></div></div>
+          </details>
+          <details class="settings-section">
+            <summary class="settings-summary">
+              <span class="settings-summary-label">UI Density</span>
+              <span class="settings-summary-value" data-summary-for="densityToggle"></span>
+              <svg class="icon-svg icon-svg-sm settings-summary-caret" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+            </summary>
+            <div class="settings-section-body"><div id="densityToggle"></div></div>
+          </details>
         </div>
       </div>
     </div>
@@ -1337,6 +1371,12 @@ async function runPipeline() {
     log('warn', null, 'Pipeline is empty — add a stage to begin.');
     return;
   }
+  // Auto-open the console so the user can see live logs as the pipeline runs.
+  const cw = document.getElementById('consoleWrap');
+  if (cw && cw.classList.contains('collapsed')) {
+    cw.classList.remove('collapsed');
+    cw.classList.add('open');
+  }
   state.running = true;
   state.startTime = performance.now();
   state.logs = [];
@@ -1714,6 +1754,15 @@ document.addEventListener('fontchange', () => {
     Object.values(monacoEditors || {}).forEach(ed => { try { ed.layout(); } catch(_) {} });
   }, 50);
 });
+
+// Settings modal open/close
+(function(){
+  const btn = document.getElementById('settingsBtn');
+  const modal = document.getElementById('settingsModal');
+  if (btn && modal) {
+    btn.addEventListener('click', () => modal.classList.add('open'));
+  }
+})();
 
 document.getElementById('addVarBtn').addEventListener('click', () => {
   state.variables.push({ key: '', value: '' });

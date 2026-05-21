@@ -23,12 +23,9 @@
         <span class="brand-tag">PROTO · v0.3</span>
       </div>
       <div class="topbar-actions">
-        <!-- Theme switcher -->
-        <div id="themePicker"></div>
-        <!-- Font family picker -->
-        <div id="fontPicker"></div>
-        <!-- UI density picker -->
-        <div id="densityToggle"></div>
+        <button class="btn" id="settingsBtn" title="Settings (theme, font, density)">
+          <svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
         <button class="btn btn-primary" id="newPipelineBtn">
           <svg class="icon-svg" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           New Pipeline
@@ -59,6 +56,44 @@
           </div>
           <div class="audit-filters" id="auditFilters"></div>
           <div class="audit-feed" id="auditFeed"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========= SETTINGS MODAL ========= -->
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Settings</div>
+        <button class="modal-close" onclick="document.getElementById('settingsModal').classList.remove('open')">×</button>
+      </div>
+      <div class="modal-body settings-body">
+        <div class="settings-accordion" id="settingsAccordion">
+          <details class="settings-section" open>
+            <summary class="settings-summary">
+              <span class="settings-summary-label">Theme</span>
+              <span class="settings-summary-value" data-summary-for="themePicker"></span>
+              <svg class="icon-svg icon-svg-sm settings-summary-caret" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+            </summary>
+            <div class="settings-section-body"><div id="themePicker"></div></div>
+          </details>
+          <details class="settings-section">
+            <summary class="settings-summary">
+              <span class="settings-summary-label">Font Family</span>
+              <span class="settings-summary-value" data-summary-for="fontPicker"></span>
+              <svg class="icon-svg icon-svg-sm settings-summary-caret" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+            </summary>
+            <div class="settings-section-body"><div id="fontPicker"></div></div>
+          </details>
+          <details class="settings-section">
+            <summary class="settings-summary">
+              <span class="settings-summary-label">UI Density</span>
+              <span class="settings-summary-value" data-summary-for="densityToggle"></span>
+              <svg class="icon-svg icon-svg-sm settings-summary-caret" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+            </summary>
+            <div class="settings-section-body"><div id="densityToggle"></div></div>
+          </details>
         </div>
       </div>
     </div>
@@ -579,6 +614,12 @@ function createPipeline() {
 
 // ============== EVENTS ==============
 document.getElementById('newPipelineBtn').addEventListener('click', openModal);
+document.getElementById('settingsBtn').addEventListener('click', () => {
+  document.getElementById('settingsModal').classList.add('open');
+});
+document.getElementById('settingsModal').addEventListener('click', (e) => {
+  if (e.target.id === 'settingsModal') e.target.classList.remove('open');
+});
 document.getElementById('modalClose').addEventListener('click', closeModal);
 document.getElementById('modalCancel').addEventListener('click', closeModal);
 document.getElementById('modalCreate').addEventListener('click', createPipeline);
