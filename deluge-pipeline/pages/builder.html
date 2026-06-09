@@ -124,6 +124,22 @@
             <span class="stat-pill"><b id="totalDuration">0ms</b> total</span>
           </div>
           <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="btn" id="autoArrangeBtn" title="Auto arrange stages and routing">
+              <svg class="icon-svg" viewBox="0 0 24 24"><path d="M3 7h8M3 12h14M3 17h18"/><circle cx="14" cy="7" r="2"/><circle cx="20" cy="12" r="2"/><circle cx="8" cy="17" r="2"/></svg>
+              Arrange Route
+            </button>
+            <div class="zoom-controls" title="Canvas zoom">
+              <button class="btn-icon" id="zoomOutBtn" title="Zoom out (Cmd+-)">
+                <svg class="icon-svg" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+              <span class="zoom-level" id="zoomLevel">100%</span>
+              <button class="btn-icon" id="zoomInBtn" title="Zoom in (Cmd++)">
+                <svg class="icon-svg" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+              <button class="btn-icon" id="zoomResetBtn" title="Reset zoom (Cmd+0)">
+                <svg class="icon-svg" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+              </button>
+            </div>
             <button class="zen-run" id="zenRunBtn" title="Run pipeline">
               <svg class="icon-svg" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             </button>
@@ -142,10 +158,10 @@
         </div>
 
         <!-- CONSOLE -->
-        <div class="console-wrap open" id="consoleWrap">
+        <div class="console-wrap collapsed" id="consoleWrap">
           <div class="console-resize-handle" id="consoleResizeHandle"></div>
           <div class="console-header" id="consoleHeader">
-            <span class="console-title" id="consoleTitle">▾ Console</span>
+            <span class="console-title" id="consoleTitle">▸ Console</span>
             <div class="console-tabs" id="consoleTabs">
               <div class="console-tab active" data-tab="logs">Logs</div>
               <div class="console-tab" data-tab="audit">Audit Trail</div>
@@ -228,6 +244,34 @@
     </div>
   </div>
 
+  <!-- Flow Choice Modal (serial vs parallel) -->
+  <div class="modal-overlay" id="flowChoiceModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="flowChoiceTitle">How should this stage run?</div>
+        <button class="modal-close" id="flowChoiceClose">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="field-group">
+          <label class="field-label">Relative to</label>
+          <select class="field-input" id="flowChoiceParent"></select>
+        </div>
+        <div class="flow-choice-cards">
+          <button class="flow-choice-card" data-flow="after">
+            <div class="fcc-icon">→</div>
+            <div class="fcc-title">Serial</div>
+            <div class="fcc-desc">Runs <b>after</b> the selected stage and consumes its <b>output</b>. Use to chain steps.</div>
+          </button>
+          <button class="flow-choice-card" data-flow="branch">
+            <div class="fcc-icon">⤙</div>
+            <div class="fcc-title">Parallel</div>
+            <div class="fcc-desc">Runs <b>alongside</b>, sharing the same <b>input</b> as the selected stage. Use to fan out.</div>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Settings Modal -->
   <div class="modal-overlay" id="settingsModal">
     <div class="modal">
@@ -295,12 +339,22 @@ const state = {
   ],
   stages: [],
   selectedStageId: null,
+  // The builder is a single no-code hybrid flow: stages are wired into a graph
+  // off the Job and joined at Finally. Each stage chooses its own flow
+  // (serial = after parent's output, parallel = branch sharing parent's input).
+  // Kept as a constant so the existing graph-mode code paths stay active.
+  executionMode: 'parallel',
+  // Finally / collector pseudo-stage — holds every stage's context + response after a parallel run
+  finalState: { id: '__finally__', state: 'idle', collected: null, lastDuration: null, lastCredits: null, error: null },
+  // Job / distributor pseudo-node — the broadcast payload fed to every parallel stage
+  jobNode: { id: '__job__', lastPayload: null, state: 'idle' },
   inspectorTab: 'config',
   consoleTab: 'logs',
   logs: [],
   audit: [],
   running: false,
   startTime: null,
+  canvasZoom: 1,
   // Accordion open state per stage block
   accordion: {}, // { stageId: { pre: bool, task: bool, post: bool } }
   // Console filters
@@ -390,6 +444,15 @@ function seedPipeline() {
       post: { enabled: false, code: DEFAULT_POST_CODE },
     }),
   ];
+  // Wire an out-of-the-box HYBRID flow:
+  //   Job → Validate → Fetch → Notify   (serial chain)
+  //                 ↘ Charge             (parallel branch off Validate)
+  const [validate, fetch, charge, notify] = state.stages;
+  validate.flow = 'after';  validate.parentId = '__job__';
+  fetch.flow    = 'after';  fetch.parentId    = validate.id;
+  charge.flow   = 'branch'; charge.parentId   = validate.id;
+  notify.flow   = 'after';  notify.parentId   = fetch.id;
+
   // Default: open only the Task accordion for each stage
   state.stages.forEach(s => {
     state.accordion[s.id] = { pre: false, task: true, post: false };
@@ -405,6 +468,12 @@ function makeStage(name, desc, blocks) {
     desc,
     inputSchema: '{"order_id": "string", "order_amount": "number"}',
     maxRetries: 0,
+    // Hybrid flow (used in parallel/graph mode):
+    //   flow 'after'  → runs after parentId, consuming that stage's OUTPUT (sequential)
+    //   flow 'branch' → shares the SAME input parentId received, runs concurrently (parallel)
+    // parentId: a stage id, or '__job__' for the trigger/distributor root.
+    flow: blocks?.flow ?? 'branch',
+    parentId: blocks?.parentId ?? '__job__',
     pre:  blocks?.pre  ?? { enabled: false, code: DEFAULT_PRE_CODE },
     task: blocks?.task ?? { code: DEFAULT_TASK_CODE },
     post: blocks?.post ?? { enabled: false, code: DEFAULT_POST_CODE },
@@ -425,7 +494,70 @@ function makeStage(name, desc, blocks) {
 }
 
 // ============== ADD STAGE MODAL ==============
-function showAddStageModal() {
+// Centralized stage creation: append and attach to the most sensible anchor —
+// the stage you currently have selected, else the last stage, else the Job —
+// then ask where to add it (serial/parallel + parent).
+function addStage(s, opts = {}) {
+  const selected = state.stages.find(x => x.id === state.selectedStageId);
+  const anchor = opts.anchorId === '__job__'
+    ? { id: '__job__' }
+    : (state.stages.find(x => x.id === opts.anchorId) || selected || state.stages[state.stages.length - 1]);
+  s.parentId = anchor ? anchor.id : '__job__';
+  s.flow = 'after';
+  state.stages.push(s);
+  state.selectedStageId = s.id;
+  renderPipeline();
+  renderInspector();
+  log('system', null, `Added stage ${stageRef(s)}`);
+  promptStageFlow(s, { isNew: true });
+}
+
+function closeFlowChoiceModal(force) {
+  const modal = document.getElementById('flowChoiceModal');
+  if (!modal) return false;
+  if (!force && modal.dataset.required === 'true') return false;
+  modal.classList.remove('open');
+  modal.dataset.required = 'false';
+  return true;
+}
+
+// In-app prompt: choose Serial (after) or Parallel (branch) + the parent.
+function promptStageFlow(stage, opts = {}) {
+  const modal = document.getElementById('flowChoiceModal');
+  const title = document.getElementById('flowChoiceTitle');
+  const parentSel = document.getElementById('flowChoiceParent');
+  const closeBtn = document.getElementById('flowChoiceClose');
+  title.textContent = opts.isNew
+    ? `Where should "${stage.name}" go?`
+    : `Change flow for "${stage.name}"`;
+
+  const cur = safeParentForStage(stage, effectiveParentId(stage));
+  parentSel.innerHTML = buildParentOptions(stage, cur);
+  stage.parentId = cur;
+
+  modal.dataset.required = opts.isNew ? 'true' : 'false';
+  if (closeBtn) closeBtn.onclick = () => closeFlowChoiceModal(false);
+
+  // Highlight the current flow choice
+  modal.querySelectorAll('.flow-choice-card').forEach(c => {
+    c.classList.toggle('sel', c.dataset.flow === stage.flow);
+  });
+
+  modal.querySelectorAll('.flow-choice-card').forEach(card => {
+    card.onclick = () => {
+      stage.flow = card.dataset.flow;
+      stage.parentId = safeParentForStage(stage, parentSel.value);
+      closeFlowChoiceModal(true);
+      renderPipeline();
+      renderInspector();
+      log('system', null, `${stageRef(stage)} set to ${stage.flow === 'after' ? 'SERIAL (after ' : 'PARALLEL (branch of '}${stage.parentId === '__job__' ? 'Job' : (state.stages.find(s => s.id === stage.parentId)?.name || 'Job')})`);
+    };
+  });
+
+  modal.classList.add('open');
+}
+
+function showAddStageModal(opts = {}) {
   const modal = document.getElementById('addStageModal');
   const templateList = document.getElementById('modalTemplateList');
   modal.classList.add('open');
@@ -443,12 +575,8 @@ function showAddStageModal() {
 
   // Handle "Start from Scratch" option
   modal.querySelector('[data-action="scratch"]').onclick = () => {
-    const s = makeStage('New Stage', 'Describe what this stage does');
-    state.stages.push(s);
-    state.selectedStageId = s.id;
-    renderPipeline();
-    renderInspector();
     modal.classList.remove('open');
+    addStage(makeStage('New Stage', 'Describe what this stage does'), opts);
   };
 
   // Handle template selection
@@ -456,12 +584,8 @@ function showAddStageModal() {
     item.onclick = () => {
       const templateName = item.dataset.template;
       const tpl = TASK_TEMPLATES.find(t => t.name === templateName);
-      const s = makeStage(templateName, tpl.desc);
-      state.stages.push(s);
-      state.selectedStageId = s.id;
-      renderPipeline();
-      renderInspector();
       modal.classList.remove('open');
+      addStage(makeStage(templateName, tpl.desc), opts);
     };
   });
 }
@@ -469,6 +593,7 @@ function showAddStageModal() {
 // Close modal on overlay click
 document.addEventListener('click', (e) => {
   if (e.target.classList.contains('modal-overlay')) {
+    if (e.target.id === 'flowChoiceModal' && e.target.dataset.required === 'true') return;
     e.target.classList.remove('open');
   }
 });
@@ -512,12 +637,7 @@ function renderTemplates() {
       <div class="tt-desc">${t.desc}</div>
     `;
     el.addEventListener('click', () => {
-      const s = makeStage(t.name, t.desc);
-      state.stages.push(s);
-      state.selectedStageId = s.id;
-      renderPipeline();
-      renderInspector();
-      log('system', null, `Added stage ${stageRef(s)}`);
+      addStage(makeStage(t.name, t.desc));
     });
     root.appendChild(el);
   });
@@ -525,6 +645,12 @@ function renderTemplates() {
 
 // ============== RENDER: PIPELINE CANVAS ==============
 function renderPipeline() {
+  // Single no-code hybrid flow: always render the Job → stages → Finally graph.
+  renderPipelineParallel();
+  document.getElementById('stageCount').textContent = state.stages.length;
+  return;
+
+  // (legacy linear renderer — retained but unreachable)
   const flow = document.getElementById('pipelineFlow');
   flow.className = 'pipeline-flow' + (state.layout === 'vertical' ? ' vertical' : '');
   flow.innerHTML = '';
@@ -552,6 +678,666 @@ function renderPipeline() {
   document.getElementById('stageCount').textContent = state.stages.length;
 }
 
+// ============== GRAPH TOPOLOGY HELPERS (hybrid mode) ==============
+// Resolve the effective parent id of a stage; falls back to the Job root if
+// the referenced parent was deleted or points at itself.
+function effectiveParentId(stage) {
+  if (!stage.parentId || stage.parentId === '__job__') return '__job__';
+  if (stage.parentId === stage.id) return '__job__';
+  return state.stages.some(s => s.id === stage.parentId) ? stage.parentId : '__job__';
+}
+
+function isDescendantOf(stageId, maybeAncestorId) {
+  if (!stageId || !maybeAncestorId || stageId === maybeAncestorId) return false;
+  let cur = state.stages.find(s => s.id === stageId);
+  const seen = new Set();
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    const pid = effectiveParentId(cur);
+    if (pid === '__job__') return false;
+    if (pid === maybeAncestorId) return true;
+    cur = state.stages.find(s => s.id === pid);
+  }
+  return false;
+}
+
+function isValidParentForStage(stage, candidateParentId) {
+  if (!stage || !candidateParentId || candidateParentId === '__job__') return true;
+  if (candidateParentId === stage.id) return false;
+  // Don't allow wiring to descendants; that would create a cycle.
+  if (isDescendantOf(candidateParentId, stage.id)) return false;
+  return state.stages.some(s => s.id === candidateParentId);
+}
+
+function safeParentForStage(stage, candidateParentId) {
+  return isValidParentForStage(stage, candidateParentId) ? candidateParentId : '__job__';
+}
+
+function buildParentOptions(stage, selectedParentId) {
+  const safeSelected = safeParentForStage(stage, selectedParentId);
+  const opts = ['<option value="__job__"' + (safeSelected === '__job__' ? ' selected' : '') + '>⤙ Job (trigger input)</option>'];
+  state.stages
+    .filter(s => s.id !== stage.id && !isDescendantOf(s.id, stage.id))
+    .forEach(s => {
+      opts.push(`<option value="${s.id}"${safeSelected === s.id ? ' selected' : ''}>${escapeHtml(s.name)}</option>`);
+    });
+  return opts.join('');
+}
+
+let flowEdgesRaf = null;
+function requestFlowEdgesRedraw() {
+  if (flowEdgesRaf != null) return;
+  flowEdgesRaf = requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      flowEdgesRaf = null;
+      if (state.executionMode === 'parallel' && typeof drawFlowEdges === 'function') drawFlowEdges();
+    });
+  });
+}
+
+function setCanvasZoom(nextZoom) {
+  const z = Math.max(0.5, Math.min(2, Number(nextZoom) || 1));
+  state.canvasZoom = Math.round(z * 100) / 100;
+  const label = document.getElementById('zoomLevel');
+  if (label) label.textContent = Math.round(state.canvasZoom * 100) + '%';
+  const flow = document.getElementById('pipelineFlow');
+  if (flow) flow.style.zoom = String(state.canvasZoom);
+  requestFlowEdgesRedraw();
+  setTimeout(requestFlowEdgesRedraw, 0);
+}
+
+function adjustCanvasZoom(delta) {
+  setCanvasZoom((state.canvasZoom || 1) + delta);
+}
+
+function autoArrangeNodes() {
+  const byLevel = {};
+  let maxLevel = 0;
+  state.stages.forEach((s) => {
+    const lvl = stageLevel(s);
+    maxLevel = Math.max(maxLevel, lvl);
+    (byLevel[lvl] = byLevel[lvl] || []).push(s);
+  });
+
+  const colW = 380;
+  const cardH = 320;
+  const rowGap = 72;
+  const groupGap = 120;
+  const baseX = 40;
+  const baseY = 110;
+
+  for (let lvl = 0; lvl <= maxLevel; lvl++) {
+    const group = (byLevel[lvl] || []).slice().sort((a, b) => {
+      const ap = effectiveParentId(a);
+      const bp = effectiveParentId(b);
+      if (ap === bp) return a.name.localeCompare(b.name);
+      return ap.localeCompare(bp);
+    });
+
+    const byParent = {};
+    group.forEach((s) => {
+      const pid = effectiveParentId(s);
+      (byParent[pid] = byParent[pid] || []).push(s);
+    });
+
+    let yCursor = baseY;
+    Object.keys(byParent).sort().forEach((pid) => {
+      const siblings = byParent[pid].slice().sort((a, b) => a.name.localeCompare(b.name));
+      siblings.forEach((s, idx) => {
+        setNodePos(s.id, baseX + (lvl + 1) * colW, yCursor + idx * (cardH + rowGap));
+      });
+      yCursor += siblings.length * (cardH + rowGap) + groupGap;
+    });
+  }
+
+  const lvl0 = (byLevel[0] || []).length;
+  const jobSpan = Math.max(0, (lvl0 - 1) * (cardH + rowGap));
+  const jobY = baseY + Math.round(jobSpan / 2);
+  setNodePos('__job__', baseX, jobY);
+
+  const leaves = state.stages.filter(isLeafStage);
+  let finY = jobY;
+  if (leaves.length > 0) {
+    const ys = leaves.map(s => getNodePos(s.id).y);
+    finY = Math.round(ys.reduce((a, b) => a + b, 0) / ys.length);
+  }
+  setNodePos('__finally__', baseX + (maxLevel + 2) * colW, finY);
+
+  renderPipeline();
+}
+
+if (!state.nodePos) state.nodePos = {};
+
+function getNodePos(id) {
+  if (!state.nodePos[id]) state.nodePos[id] = { x: 0, y: 0 };
+  return state.nodePos[id];
+}
+
+function setNodePos(id, x, y) {
+  const nx = Math.max(8, Math.round(x));
+  const ny = Math.max(8, Math.round(y));
+  state.nodePos[id] = { x: nx, y: ny };
+}
+
+function ensureDefaultNodePositions() {
+  const colW = 360;
+  const rowH = 230;
+  const baseX = 40;
+  const baseY = 130;
+
+  if (!state.nodePos.__job__) setNodePos('__job__', baseX, 220);
+
+  const byLevel = {};
+  let maxLevel = 0;
+  state.stages.forEach((s) => {
+    const lvl = stageLevel(s);
+    maxLevel = Math.max(maxLevel, lvl);
+    (byLevel[lvl] = byLevel[lvl] || []).push(s);
+  });
+
+  for (let lvl = 0; lvl <= maxLevel; lvl++) {
+    (byLevel[lvl] || []).forEach((s, idx) => {
+      if (!state.nodePos[s.id]) {
+        setNodePos(s.id, baseX + (lvl + 1) * colW, baseY + idx * rowH);
+      }
+    });
+  }
+
+  if (!state.nodePos.__finally__) setNodePos('__finally__', baseX + (maxLevel + 2) * colW, 220);
+}
+
+function attachDrag(card, id) {
+  if (!card) return;
+  card.classList.add('draggable-node');
+  let dragging = false;
+  let moved = false;
+  let sx = 0;
+  let sy = 0;
+  let ox = 0;
+  let oy = 0;
+
+  card.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest('button, input, select, textarea, a')) return;
+    const p = getNodePos(id);
+    dragging = true;
+    moved = false;
+    sx = e.clientX;
+    sy = e.clientY;
+    ox = p.x;
+    oy = p.y;
+    card.classList.add('dragging');
+    try { card.setPointerCapture(e.pointerId); } catch (_) {}
+    e.preventDefault();
+  });
+
+  card.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const z = state.canvasZoom || 1;
+    const dx = e.clientX - sx;
+    const dy = e.clientY - sy;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
+    setNodePos(id, ox + dx / z, oy + dy / z);
+    const p = getNodePos(id);
+    card.style.left = p.x + 'px';
+    card.style.top = p.y + 'px';
+    requestFlowEdgesRedraw();
+  });
+
+  function stopDrag(e) {
+    if (!dragging) return;
+    dragging = false;
+    card.classList.remove('dragging');
+    try { card.releasePointerCapture(e.pointerId); } catch (_) {}
+    requestFlowEdgesRedraw();
+    if (moved) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }
+
+  card.addEventListener('pointerup', stopDrag);
+  card.addEventListener('pointercancel', stopDrag);
+}
+
+function positionNode(card, id) {
+  const p = getNodePos(id);
+  card.style.left = p.x + 'px';
+  card.style.top = p.y + 'px';
+}
+
+// Column level = depth from the Job. Every child sits one column right of its
+// parent, regardless of flow type; the flow type is conveyed by the edge style
+// (solid arrow = consumes output, dashed = shares input).
+function stageLevel(stage, _seen) {
+  const seen = _seen || new Set();
+  if (seen.has(stage.id)) return 0; // cycle guard
+  seen.add(stage.id);
+  const pid = effectiveParentId(stage);
+  if (pid === '__job__') return 0;
+  const parent = state.stages.find(s => s.id === pid);
+  if (!parent) return 0;
+  return stageLevel(parent, seen) + 1;
+}
+
+// A stage is a leaf if no other stage uses it as a parent — leaves flow into Finally.
+function isLeafStage(stage) {
+  return !state.stages.some(s => s.id !== stage.id && effectiveParentId(s) === stage.id);
+}
+
+// Parallel / hybrid topology rendered as Job → level columns → Finally,
+// with drawn connector edges (see drawFlowEdges).
+function renderPipelineParallel() {
+  const flow = document.getElementById('pipelineFlow');
+  flow.className = 'pipeline-flow parallel free-layout';
+  flow.innerHTML = '';
+  flow.style.zoom = String(state.canvasZoom || 1);
+
+  // SVG overlay that holds the connector edges (sits behind the cards)
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('class', 'flow-edges');
+  flow.appendChild(svg);
+
+  // HTML overlay for wire-level controls (e.g., add stage on outbound edge)
+  const wireLayer = document.createElement('div');
+  wireLayer.className = 'wire-add-layer';
+  flow.appendChild(wireLayer);
+
+  ensureDefaultNodePositions();
+
+  // 1) Job / distributor root
+  const job = jobNodeEl();
+  positionNode(job, '__job__');
+  attachDrag(job, '__job__');
+  flow.appendChild(job);
+
+  // 2) Stage nodes (freely draggable)
+  state.stages.forEach((s, idx) => {
+    const card = stageCardEl(s, idx);
+    positionNode(card, s.id);
+    attachDrag(card, s.id);
+    flow.appendChild(card);
+  });
+
+  // 3) Finally / collector
+  const fin = finallyNodeEl();
+  positionNode(fin, '__finally__');
+  attachDrag(fin, '__finally__');
+  flow.appendChild(fin);
+
+  // Keep canvas large enough for free-form placement + scroll
+  const ids = ['__job__', '__finally__', ...state.stages.map(s => s.id)];
+  const maxX = Math.max(...ids.map(id => getNodePos(id).x));
+  const maxY = Math.max(...ids.map(id => getNodePos(id).y));
+  flow.style.minWidth = Math.max(1200, maxX + 420) + 'px';
+  flow.style.minHeight = Math.max(520, maxY + 300) + 'px';
+
+  // Draw edges after layout settles
+  requestFlowEdgesRedraw();
+}
+
+// Draw the connector edges between Job, stages, and Finally.
+function drawFlowEdges() {
+  const flow = document.getElementById('pipelineFlow');
+  if (!flow || state.executionMode !== 'parallel') return;
+  const svg = flow.querySelector('.flow-edges');
+  const wireLayer = flow.querySelector('.wire-add-layer');
+  if (!svg) return;
+  const svgNS = 'http://www.w3.org/2000/svg';
+
+  const W = flow.scrollWidth, H = flow.scrollHeight;
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = `
+    <defs>
+      <marker id="arrowAfter" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="edge-arrow-after"/>
+      </marker>
+      <marker id="arrowBranch" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="edge-arrow-branch"/>
+      </marker>
+      <marker id="arrowJoin" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="edge-arrow-join"/>
+      </marker>
+    </defs>`;
+
+  const esc = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape : (s => s);
+  const cardEl = id => flow.querySelector(`.stage-card[data-id="${esc(id)}"]`);
+  const z = state.canvasZoom || 1;
+  const flowRect = flow.getBoundingClientRect();
+  const rc = el => {
+    const r = el.getBoundingClientRect();
+    return {
+      x: (r.right - flowRect.left) / z,
+      y: ((r.top + r.bottom) / 2 - flowRect.top) / z,
+    };
+  };
+  const lc = el => {
+    const r = el.getBoundingClientRect();
+    return {
+      x: (r.left - flowRect.left) / z,
+      y: ((r.top + r.bottom) / 2 - flowRect.top) / z,
+    };
+  };
+
+  const obstacleRects = Array.from(flow.querySelectorAll('.stage-card[data-id]')).map(el => {
+    const r = el.getBoundingClientRect();
+    return {
+      left: (r.left - flowRect.left) / z,
+      right: (r.right - flowRect.left) / z,
+      top: (r.top - flowRect.top) / z,
+      bottom: (r.bottom - flowRect.top) / z,
+    };
+  });
+
+  function clamp(v, min, max) {
+    return Math.max(min, Math.min(max, v));
+  }
+
+  function pickLaneX(sx, tx, sy, ty, desiredX) {
+    const minX = sx + 34;
+    const maxX = tx - 34;
+    if (maxX <= minX) return clamp(desiredX, minX, maxX);
+
+    const yMin = Math.min(sy, ty) - 8;
+    const yMax = Math.max(sy, ty) + 8;
+    const blocked = [];
+    obstacleRects.forEach(r => {
+      if (r.bottom < yMin || r.top > yMax) return;
+      blocked.push([r.left - 16, r.right + 16]);
+    });
+    blocked.sort((a, b) => a[0] - b[0]);
+
+    const merged = [];
+    blocked.forEach(([l, r]) => {
+      if (!merged.length || l > merged[merged.length - 1][1]) merged.push([l, r]);
+      else merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], r);
+    });
+
+    const ranges = [];
+    let cur = minX;
+    merged.forEach(([l, r]) => {
+      if (r < minX || l > maxX) return;
+      const cl = Math.max(minX, l);
+      const cr = Math.min(maxX, r);
+      if (cl > cur) ranges.push([cur, cl]);
+      cur = Math.max(cur, cr);
+    });
+    if (cur < maxX) ranges.push([cur, maxX]);
+    if (!ranges.length) return clamp(desiredX, minX, maxX);
+
+    const probes = [
+      desiredX,
+      sx + 72,
+      sx + (tx - sx) * 0.38,
+      sx + (tx - sx) * 0.5,
+      tx - 72,
+    ];
+    let best = clamp(desiredX, minX, maxX);
+    let bestScore = Number.POSITIVE_INFINITY;
+    probes.forEach(v => {
+      const x = clamp(v, minX, maxX);
+      const inFree = ranges.some(([l, r]) => x >= l && x <= r);
+      if (!inFree) return;
+      const score = Math.abs(x - desiredX);
+      if (score < bestScore) {
+        best = x;
+        bestScore = score;
+      }
+    });
+    if (bestScore !== Number.POSITIVE_INFINITY) return best;
+
+    return ranges
+      .map(([l, r]) => clamp(desiredX, l, r))
+      .sort((a, b) => Math.abs(a - desiredX) - Math.abs(b - desiredX))[0];
+  }
+
+  function buildAutoRoutePath(from, to, route) {
+    const sx = from.x;
+    const sy = from.y + (route?.sourceSpread || 0);
+    const tx = to.x;
+    const ty = to.y + (route?.targetSpread || 0);
+    const dx = tx - sx;
+    const dy = ty - sy;
+
+    // Short edges look better as a compact bezier.
+    if (dx < 120) {
+      const c = Math.max(22, dx * 0.45);
+      return `M ${sx},${sy} C ${sx + c},${sy} ${tx - c},${ty} ${tx},${ty}`;
+    }
+
+    // Longer edges use a soft elbow route with a dedicated lane near mid-column.
+    const laneOffset = route?.laneOffset || 0;
+    const midBase = sx + dx * 0.5;
+    const desiredMidX = clamp(midBase + laneOffset, sx + 34, tx - 34);
+    const midX = pickLaneX(sx, tx, sy, ty, desiredMidX);
+
+    // Near-horizontal edges stay curved rather than making a tiny vertical jog.
+    if (Math.abs(dy) < 8) {
+      const c = Math.max(30, Math.min(110, dx * 0.32));
+      return `M ${sx},${sy} C ${sx + c},${sy} ${tx - c},${ty} ${tx},${ty}`;
+    }
+
+    const bend = 14;
+    const sign = dy > 0 ? 1 : -1;
+    const y1 = sy + sign * bend;
+    const y2 = ty - sign * bend;
+    const xL = midX - bend;
+    const xR = midX + bend;
+    return `M ${sx},${sy} L ${xL},${sy} Q ${midX},${sy} ${midX},${y1} L ${midX},${y2} Q ${midX},${ty} ${xR},${ty} L ${tx},${ty}`;
+  }
+
+  function addPath(from, to, cls, marker, sourceId, route) {
+    const d = buildAutoRoutePath(from, to, route);
+    const p = document.createElementNS(svgNS, 'path');
+    p.setAttribute('d', d);
+    p.setAttribute('class', cls);
+    p.setAttribute('fill', 'none');
+    if (marker) p.setAttribute('marker-end', `url(#${marker})`);
+    if (sourceId) p.dataset.sourceId = sourceId;
+    svg.appendChild(p);
+    return p;
+  }
+
+  const jobEl = cardEl('__job__');
+  const finEl = cardEl('__finally__');
+
+  if (wireLayer) wireLayer.innerHTML = '';
+  const outboundSources = new Set(['__job__', ...state.stages.map(s => s.id)]);
+  const childCountBySource = {};
+  state.stages.forEach(stage => {
+    const pid = effectiveParentId(stage);
+    childCountBySource[pid] = (childCountBySource[pid] || 0) + 1;
+  });
+
+  const childrenBySource = {};
+  state.stages.forEach(stage => {
+    const pid = effectiveParentId(stage);
+    (childrenBySource[pid] = childrenBySource[pid] || []).push(stage);
+  });
+  Object.values(childrenBySource).forEach(list => {
+    list.sort((a, b) => getNodePos(a.id).y - getNodePos(b.id).y);
+  });
+
+  state.stages.forEach(stage => {
+    const childEl = cardEl(stage.id);
+    if (!childEl) return;
+    const pid = effectiveParentId(stage);
+    outboundSources.add(pid);
+    const srcEl = pid === '__job__' ? jobEl : cardEl(pid);
+    if (!srcEl) return;
+    const stateCls = stage.state === 'success' ? ' active' : (stage.state === 'error' ? ' err' : (stage.state === 'skipped' ? ' muted' : ''));
+    const fromJob = pid === '__job__';
+    const isParallelOutput = (childCountBySource[pid] || 0) > 1;
+    const siblings = childrenBySource[pid] || [stage];
+    const order = Math.max(0, siblings.findIndex(s => s.id === stage.id));
+    const spread = (order - (siblings.length - 1) / 2) * 12;
+    const route = {
+      sourceSpread: spread * 0.35,
+      targetSpread: 0,
+      laneOffset: spread * 0.55,
+    };
+    if (!fromJob && stage.flow === 'after' && !isParallelOutput) {
+      addPath(rc(srcEl), lc(childEl), 'flow-edge after' + stateCls, 'arrowAfter', pid, route);
+    } else {
+      addPath(rc(srcEl), lc(childEl), 'flow-edge branch' + (fromJob ? ' from-job' : '') + stateCls, 'arrowBranch', pid, route);
+    }
+  });
+
+  // Leaves flow into Finally
+  if (finEl) {
+    const leaves = state.stages.filter(isLeafStage).sort((a, b) => getNodePos(a.id).y - getNodePos(b.id).y);
+    leaves.forEach((stage, idx) => {
+      const leafEl = cardEl(stage.id);
+      if (!leafEl) return;
+      const cls = 'flow-edge join' + (stage.state === 'success' ? ' active' : '');
+      const spread = (idx - (leaves.length - 1) / 2) * 11;
+      const route = {
+        sourceSpread: spread * 0.25,
+        targetSpread: spread * 0.45,
+        laneOffset: spread * 0.4,
+      };
+      addPath(rc(leafEl), lc(finEl), cls, 'arrowJoin', stage.id, route);
+    });
+  }
+
+  // Add one "+ Add Stage" control at each source's outbound wire point.
+  const hideTimer = { id: null };
+  const clearHideTimer = () => {
+    if (hideTimer.id) {
+      clearTimeout(hideTimer.id);
+      hideTimer.id = null;
+    }
+  };
+  const showWireBtn = (sourceId, hoverPoint) => {
+    clearHideTimer();
+    if (!wireLayer) return;
+    wireLayer.querySelectorAll('.wire-add-btn').forEach(b => b.classList.remove('visible'));
+    const hit = wireLayer.querySelector(`.wire-add-btn[data-source-id="${sourceId}"]`);
+    if (hit) {
+      if (hoverPoint) {
+        hit.style.left = hoverPoint.x + 'px';
+        hit.style.top = hoverPoint.y + 'px';
+      }
+      hit.classList.add('visible');
+    }
+  };
+  const hideWireBtns = (defer = true) => {
+    if (!wireLayer) return;
+    clearHideTimer();
+    const run = () => wireLayer.querySelectorAll('.wire-add-btn').forEach(b => b.classList.remove('visible'));
+    if (defer) {
+      hideTimer.id = setTimeout(run, 180);
+    } else {
+      run();
+    }
+  };
+
+  if (wireLayer) {
+    outboundSources.forEach(sourceId => {
+      if (sourceId === '__finally__') return;
+      const srcEl = cardEl(sourceId);
+      if (!srcEl) return;
+      const p = rc(srcEl);
+      const btn = document.createElement('button');
+      btn.className = 'wire-add-btn';
+      btn.innerHTML = '<svg class="icon-svg icon-svg-sm" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+      btn.style.left = (p.x + 18) + 'px';
+      btn.style.top = p.y + 'px';
+      btn.dataset.sourceId = sourceId;
+      btn.title = sourceId === '__job__' ? 'Add stage from Distributor wire' : 'Add stage from outbound wire';
+      btn.setAttribute('aria-label', 'Add stage');
+      btn.addEventListener('mouseenter', () => showWireBtn(sourceId));
+      btn.addEventListener('mouseleave', () => hideWireBtns(true));
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showAddStageModal({ anchorId: sourceId });
+      });
+      wireLayer.appendChild(btn);
+    });
+
+    svg.onmousemove = (e) => {
+      const t = e.target;
+      if (t && t.classList && t.classList.contains('flow-edge') && t.dataset.sourceId) {
+        const hoverPoint = {
+          x: (e.clientX - flowRect.left) / z,
+          y: (e.clientY - flowRect.top) / z,
+        };
+        showWireBtn(t.dataset.sourceId, hoverPoint);
+      } else {
+        hideWireBtns(true);
+      }
+    };
+    svg.onmouseleave = () => hideWireBtns(true);
+    wireLayer.addEventListener('mouseleave', () => hideWireBtns(true));
+    hideWireBtns(false);
+  }
+}
+
+function jobNodeEl() {
+  const node = state.jobNode;
+  const card = document.createElement('div');
+  card.className = 'stage-card job-node ' + (node.state || 'idle');
+  if (state.selectedStageId === '__job__') card.classList.add('selected');
+  card.dataset.id = '__job__';
+  card.innerHTML = `
+    <div class="stage-header">
+      <div class="stage-header-top">
+        <span class="stage-index">JOB</span>
+        <span class="stage-status-dot ${node.state || 'idle'}"></span>
+      </div>
+      <div class="stage-name">⤙ Distributor</div>
+      <div class="stage-desc">Broadcasts the trigger input to all ${state.stages.length} stage(s).</div>
+    </div>
+    <div class="stage-body">
+      <div class="stage-section">
+        <span class="stage-section-label">fan-out</span>
+        <span class="tag">broadcast</span>
+        <span class="stage-section-status ${node.state === 'success' ? 'success' : ''}">${node.state === 'success' ? '✓ sent' : 'idle'}</span>
+      </div>
+    </div>`;
+  card.addEventListener('click', () => selectStage('__job__'));
+  return card;
+}
+
+function finallyNodeEl() {
+  const fin = state.finalState;
+  const card = document.createElement('div');
+  card.className = 'stage-card finally-node ' + (fin.state || 'idle');
+  if (state.selectedStageId === '__finally__') card.classList.add('selected');
+  card.dataset.id = '__finally__';
+  let summary = 'idle';
+  if (fin.collected) {
+    const total = Object.keys(fin.collected).length;
+    const ok = Object.values(fin.collected).filter(r => r.status === 'success').length;
+    summary = `${ok}/${total} ok`;
+  }
+  card.innerHTML = `
+    <div class="stage-header">
+      <div class="stage-header-top">
+        <span class="stage-index">FINALLY</span>
+        <span class="stage-status-dot ${fin.state || 'idle'}"></span>
+      </div>
+      <div class="stage-name">⊕ Collector</div>
+      <div class="stage-desc">Aggregates context + response of every stage.</div>
+    </div>
+    <div class="stage-body">
+      <div class="stage-section">
+        <span class="stage-section-label">collected</span>
+        <span class="tag">join</span>
+        <span class="stage-section-status ${fin.state === 'error' ? 'error' : (fin.state === 'success' ? 'success' : '')}">${summary}</span>
+      </div>
+    </div>
+    <div class="stage-footer">
+      <span class="stage-metric">⏱ <b>${fin.lastDuration != null ? fin.lastDuration + 'ms' : '—'}</b></span>
+      <span class="stage-metric">◈ <b>${fin.lastCredits != null ? fin.lastCredits : '—'}</b> credits</span>
+    </div>`;
+  card.addEventListener('click', () => selectStage('__finally__'));
+  return card;
+}
+
 function stageCardEl(s, idx) {
   const card = document.createElement('div');
   card.className = 'stage-card ' + (s.state || 'idle');
@@ -575,26 +1361,54 @@ function stageCardEl(s, idx) {
   const preStatus  = !s.pre.enabled  ? 'disabled' : (s.sectionStates.pre || 'idle');
   const postStatus = !s.post.enabled ? 'disabled' : (s.sectionStates.post || 'idle');
 
+  // Flow chip — click to change serial/parallel + parent
+  const pid = effectiveParentId(s);
+  const parentName = pid === '__job__' ? 'Job' : (state.stages.find(x => x.id === pid)?.name || 'Job');
+  const flowBadge = s.flow === 'after'
+    ? `<button class="flow-badge after" title="Serial — consumes ${escapeAttr(parentName)}'s output. Click to change.">→ after ${escapeHtml(parentName)} <span class="flow-edit">✎</span></button>`
+    : `<button class="flow-badge branch" title="Parallel — shares ${escapeAttr(parentName)}'s input. Click to change.">⤙ Branch from '${escapeHtml(parentName)}' <span class="flow-edit">✎</span></button>`;
+
   card.innerHTML = `
     <div class="stage-header">
       <div class="stage-header-top">
         <span class="stage-index">STAGE ${String(idx + 1).padStart(2, '0')}</span>
         <span class="stage-status-dot ${s.state || 'idle'}"></span>
       </div>
-      <div class="stage-name">${escapeHtml(s.name)}</div>
+      <div class="stage-name-row">
+        <div class="stage-name">${escapeHtml(s.name)}</div>
+        <button class="stage-name-edit" title="Rename stage" aria-label="Rename stage">✎</button>
+      </div>
       <div class="stage-desc">${escapeHtml(s.desc)}</div>
+      ${flowBadge}
     </div>
     <div class="stage-body">
-      ${sectionRow('pre',  preStatus,  'gate')}
+      ${sectionRow('pre',  preStatus,  'condition')}
       ${sectionRow('task', s.sectionStates.task || 'idle', 'deluge')}
       ${sectionRow('post', postStatus, 'hook')}
     </div>
     <div class="stage-footer">
       <span class="stage-metric">⏱ <b>${s.lastDuration != null ? s.lastDuration + 'ms' : '—'}</b></span>
-      <span class="stage-metric">◈ <b>${s.lastCredits != null ? s.lastCredits : '—'}</b> cr</span>
+      <span class="stage-metric">◈ <b>${s.lastCredits != null ? s.lastCredits : '—'}</b> credits</span>
     </div>
   `;
 
+  const chip = card.querySelector('.flow-badge');
+  if (chip) chip.addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectStage(s.id);
+    promptStageFlow(s);
+  });
+  const renameBtn = card.querySelector('.stage-name-edit');
+  if (renameBtn) renameBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const next = window.prompt('Stage name', s.name || '');
+    if (next == null) return;
+    const clean = next.trim();
+    if (!clean) return;
+    s.name = clean;
+    renderPipeline();
+    if (state.selectedStageId === s.id) renderInspector();
+  });
   card.addEventListener('click', () => selectStage(s.id));
   card.addEventListener('dblclick', (e) => {
     e.preventDefault();
@@ -644,6 +1458,11 @@ function renderInspector() {
   });
 
   const body = document.getElementById('inspectorBody');
+
+  // Pseudo-nodes (parallel topology) get their own aggregated views
+  if (state.selectedStageId === '__finally__') { body.innerHTML = renderFinallyInspector(); return; }
+  if (state.selectedStageId === '__job__')      { body.innerHTML = renderJobInspector();     return; }
+
   const stage = getSelectedStage();
   if (!stage) {
     body.innerHTML = `
@@ -656,6 +1475,30 @@ function renderInspector() {
   }
 
   if (state.inspectorTab === 'config') {
+    // Hybrid flow controls — only relevant in parallel/graph mode
+    let flowFieldHtml = '';
+    if (state.executionMode === 'parallel') {
+      const curParent = safeParentForStage(stage, effectiveParentId(stage));
+      const parentOpts = buildParentOptions(stage, curParent);
+      stage.parentId = curParent;
+      flowFieldHtml = `
+        <div class="field-group flow-config">
+          <label class="field-label">Flow — how this stage is fed</label>
+          <div class="flow-select">
+            <label class="flow-radio ${stage.flow === 'branch' ? 'sel' : ''}">
+              <input type="radio" name="cfgFlow" value="branch" ${stage.flow === 'branch' ? 'checked' : ''}/>
+              <span><b>⤙ Branch (parallel)</b><small>Shares the parent's input. Runs concurrently with siblings.</small></span>
+            </label>
+            <label class="flow-radio ${stage.flow === 'after' ? 'sel' : ''}">
+              <input type="radio" name="cfgFlow" value="after" ${stage.flow === 'after' ? 'checked' : ''}/>
+              <span><b>→ After (sequential)</b><small>Runs after the parent and consumes its output.</small></span>
+            </label>
+          </div>
+          <label class="field-label" style="margin-top:10px;">Parent</label>
+          <select class="field-input" id="cfgParent">${parentOpts}</select>
+          <div class="hint" style="font-size:var(--fs-xs);color:var(--text-faint);margin-top:4px">The Job broadcasts the trigger; pick another stage to chain or branch from it.</div>
+        </div>`;
+    }
     body.innerHTML = `
       <div class="insp-content">
         <div class="field-group">
@@ -666,6 +1509,7 @@ function renderInspector() {
           <label class="field-label">Description</label>
           <textarea class="field-textarea" id="cfgDesc">${escapeHtml(stage.desc)}</textarea>
         </div>
+        ${flowFieldHtml}
         <div class="field-group">
           <label class="field-label">Expected Input Schema (JSON)</label>
           <textarea class="field-textarea" id="cfgSchema" style="min-height: 80px;">${escapeHtml(stage.inputSchema)}</textarea>
@@ -695,6 +1539,21 @@ function renderInspector() {
       if (n > 5) { n = 5; e.target.value = '5'; }
       stage.maxRetries = n;
     });
+    // Hybrid flow wiring (parallel mode only)
+    if (state.executionMode === 'parallel') {
+      document.querySelectorAll('input[name="cfgFlow"]').forEach(r => {
+        r.addEventListener('change', e => {
+          if (!e.target.checked) return;
+          stage.flow = e.target.value;
+          renderPipeline(); renderInspector();
+        });
+      });
+      const parentSel = document.getElementById('cfgParent');
+      if (parentSel) parentSel.addEventListener('change', e => {
+        stage.parentId = safeParentForStage(stage, e.target.value);
+        renderPipeline(); renderInspector();
+      });
+    }
     document.getElementById('delStageBtn').addEventListener('click', () => {
       state.stages = state.stages.filter(s => s.id !== stage.id);
       state.selectedStageId = null;
@@ -715,7 +1574,7 @@ function renderInspector() {
     const acc = state.accordion[stage.id] || (state.accordion[stage.id] = { pre:false, task:true, post:false });
     body.innerHTML = `
       <div class="insp-content">
-        ${accordionHtml(stage, 'pre',  'Pre-Handler',  'GATE',   acc.pre,  stage.pre.enabled,  true)}
+        ${accordionHtml(stage, 'pre',  'Pre-Handler',  'CONDITION',   acc.pre,  stage.pre.enabled,  true)}
         ${accordionHtml(stage, 'task', 'Task',         'DELUGE', acc.task, true,                false)}
         ${accordionHtml(stage, 'post', 'Post-Handler', 'HOOK',   acc.post, stage.post.enabled, true)}
       </div>`;
@@ -1070,6 +1929,103 @@ function getSelectedStage() {
   return state.stages.find(s => s.id === state.selectedStageId);
 }
 
+// ============== INSPECTOR: JOB DISTRIBUTOR (parallel) ==============
+function renderJobInspector() {
+  const payload = state.jobNode.lastPayload;
+  const body = payload
+    ? `<div class="field-group">
+         <label class="field-label">Broadcast input — sent to every stage</label>
+         <div class="io-box">${escapeHtml(prettyJson(payload))}</div>
+       </div>`
+    : `<div class="empty-inspector" style="padding:30px 10px;">
+         <div class="symbol">○</div>
+         <div class="text">Run the pipeline to see the broadcast payload.</div>
+       </div>`;
+  return `
+    <div class="insp-content">
+      <div class="finally-head">
+        <div class="finally-head-title">⤙ Job · Distributor</div>
+        <div class="finally-head-sub">Fans one input out to all ${state.stages.length} stage(s). Each stage runs concurrently with its own copy.</div>
+      </div>
+      ${body}
+    </div>`;
+}
+
+// ============== INSPECTOR: FINALLY COLLECTOR (parallel) ==============
+function renderFinallyInspector() {
+  const fin = state.finalState;
+  if (!fin.collected) {
+    return `
+      <div class="insp-content">
+        <div class="empty-inspector" style="padding:40px 10px;">
+          <div class="symbol">⊕</div>
+          <div class="text">Nothing collected yet.<br/>Run the pipeline in <b>Parallel</b> mode.</div>
+        </div>
+      </div>`;
+  }
+  const entries = Object.values(fin.collected);
+  const total = entries.length;
+  const ok = entries.filter(e => e.status === 'success').length;
+  const failed = total - ok;
+
+  const cards = entries.map(e => {
+    const badge = e.status === 'success'
+      ? '<span class="fin-badge ok">✓ success</span>'
+      : (e.status === 'blocked'
+          ? '<span class="fin-badge blocked">⤼ blocked</span>'
+          : '<span class="fin-badge err">✗ failed</span>');
+    const retryNote = e.attempts > 1 ? ` · ↻${e.attempts - 1} retr${e.attempts - 1 > 1 ? 'ies' : 'y'}` : '';
+    const responseBlock = e.status === 'success'
+      ? `<div class="fin-sub">response</div><div class="io-box io-box-sm">${escapeHtml(prettyJson(e.response))}</div>`
+      : `<div class="fin-sub">error</div><div class="io-box io-box-sm err-text">${escapeHtml(e.error || 'Unknown error')}</div>`;
+    return `
+      <div class="fin-entry ${e.status}">
+        <div class="fin-entry-head">
+          <span class="fin-entry-name">${escapeHtml(e.name)}</span>
+          ${badge}
+          <span class="fin-entry-meta">${e.duration ?? '—'}ms · ${e.credits ?? '—'}cr${retryNote}</span>
+        </div>
+        <div class="fin-sub">context · ctx.input (broadcast)</div>
+        <div class="io-box io-box-sm">${escapeHtml(prettyJson(e.context))}</div>
+        ${responseBlock}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="insp-content">
+      <div class="finally-head">
+        <div class="finally-head-title">⊕ Finally · Collector</div>
+        <div class="finally-head-sub">All stage contexts and responses, available together.</div>
+      </div>
+      <div class="fin-summary">
+        <div class="fin-stat"><span class="fin-stat-label">stages</span><b>${total}</b></div>
+        <div class="fin-stat ok"><span class="fin-stat-label">success</span><b>${ok}</b></div>
+        <div class="fin-stat err"><span class="fin-stat-label">failed</span><b>${failed}</b></div>
+        <div class="fin-stat"><span class="fin-stat-label">duration</span><b>${fin.lastDuration ?? '—'}ms</b></div>
+        <div class="fin-stat"><span class="fin-stat-label">credits</span><b>${fin.lastCredits ?? '—'}</b></div>
+      </div>
+      ${cards}
+      <div class="field-group" style="margin-top:14px;">
+        <label class="field-label">Aggregated result object (ctx.responses)</label>
+        <div class="io-box">${escapeHtml(prettyJson(finallyAsObject(fin.collected)))}</div>
+      </div>
+    </div>`;
+}
+
+// Shape the collected map the way downstream code would consume it
+function finallyAsObject(collected) {
+  const out = {};
+  Object.entries(collected).forEach(([id, e]) => {
+    out[e.name] = {
+      status: e.status,
+      response: e.status === 'success' ? e.response : null,
+      error: e.status === 'success' ? null : e.error,
+      attempts: e.attempts,
+    };
+  });
+  return out;
+}
+
 // ============== HELPERS for log/audit references ==============
 function stageRef(stageOrName, block) {
   // produces an HTML anchor that selectStage can pick up
@@ -1376,6 +2332,9 @@ async function runPipeline() {
   if (cw && cw.classList.contains('collapsed')) {
     cw.classList.remove('collapsed');
     cw.classList.add('open');
+  }
+  if (state.executionMode === 'parallel') {
+    return runPipelineParallel();
   }
   state.running = true;
   state.startTime = performance.now();
@@ -1690,6 +2649,341 @@ function simulateTask(stage, payload, idx) {
   return { ...payload, [`stage_${idx + 1}_done`]: true };
 }
 
+// ============================================================================
+//  PARALLEL EXECUTION — Job fans one input out to all stages, Finally collects
+// ============================================================================
+async function runPipelineParallel() {
+  if (state.running) return;
+  state.running = true;
+  state.startTime = performance.now();
+  state.logs = [];
+  state.audit = [];
+
+  // Reset all stages (same shape as sequential reset)
+  state.stages.forEach(s => {
+    s.state = 'idle';
+    s.lastDuration = null;
+    s.lastCredits = null;
+    s.lastInput = null;
+    s.lastOutput = null;
+    s.lastError = null;
+    s.lastErrorBlock = null;
+    s.sectionStates = { pre: 'idle', task: 'idle', post: 'idle' };
+    s.sectionStats = {
+      pre:  { duration: null, credits: null, input: null, output: null, error: null, attempts: 0 },
+      task: { duration: null, credits: null, input: null, output: null, error: null, attempts: 0 },
+      post: { duration: null, credits: null, input: null, output: null, error: null, attempts: 0 },
+    };
+  });
+  state.jobNode.state = 'idle';
+  state.jobNode.lastPayload = null;
+  state.finalState.state = 'idle';
+  state.finalState.collected = null;
+  state.finalState.lastDuration = null;
+  state.finalState.lastCredits = null;
+  state.finalState.error = null;
+
+  setPipelineStatus('running');
+  log('system', null, '═══ Parallel job started ═══');
+  log('info',   null, `Loaded ${state.variables.length} variable(s) into context`);
+
+  // ----- JOB: build the broadcast payload -----
+  const trigger = {
+    order_id: 'ORD-' + Math.floor(Math.random() * 9000 + 1000),
+    order_amount: Math.floor(Math.random() * 1500 + 200),
+    customer: 'jane@example.com',
+  };
+  state.jobNode.lastPayload = trigger;
+  state.jobNode.state = 'success';
+  log('info', null, `⤙ Job distributing input to ${state.stages.length} stage(s): <code>${escapeHtml(JSON.stringify(trigger))}</code>`);
+  renderPipeline();
+
+  // ----- SCHEDULE: resolve the hybrid graph (after = sequential, branch = parallel) -----
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const BLOCKED = { __blocked: true };
+
+  // Detect any stages caught in a parent cycle; force them to the Job root so
+  // the scheduler can't deadlock.
+  const cycleStages = new Set();
+  state.stages.forEach(st => {
+    const seen = new Set();
+    let cur = st;
+    while (cur) {
+      if (seen.has(cur.id)) { cycleStages.add(st.id); break; }
+      seen.add(cur.id);
+      const pid = effectiveParentId(cur);
+      if (pid === '__job__') break;
+      cur = state.stages.find(s => s.id === pid);
+    }
+  });
+
+  const inputMemo = {}; // stageId -> Promise<inputObject | BLOCKED>
+  const runMemo = {};   // stageId -> Promise<resultRecord>
+
+  function resolveInput(stage) {
+    if (inputMemo[stage.id]) return inputMemo[stage.id];
+    inputMemo[stage.id] = (async () => {
+      if (cycleStages.has(stage.id)) {
+        log('warn', stage, `⚠ ${stageRef(stage)} is in a parent cycle — feeding it the Job input instead`);
+        return clone(trigger);
+      }
+      const pid = effectiveParentId(stage);
+      if (pid === '__job__') return clone(trigger);
+      const parent = state.stages.find(s => s.id === pid);
+      if (!parent) return clone(trigger);
+      if (stage.flow === 'after') {
+        // Sequential: wait for the parent to finish, consume its OUTPUT
+        const pr = await runStageMemo(parent);
+        if (pr.status !== 'success') return BLOCKED;
+        return clone(pr.response ?? {});
+      }
+      // Branch: share the SAME input the parent received, run concurrently
+      const pin = await resolveInput(parent);
+      return pin === BLOCKED ? BLOCKED : clone(pin);
+    })();
+    return inputMemo[stage.id];
+  }
+
+  function runStageMemo(stage) {
+    if (runMemo[stage.id]) return runMemo[stage.id];
+    runMemo[stage.id] = (async () => {
+      const input = await resolveInput(stage);
+      const idx = state.stages.indexOf(stage);
+      if (input === BLOCKED) {
+        stage.state = 'skipped';
+        stage.sectionStates = { pre: 'skipped', task: 'skipped', post: 'skipped' };
+        stage.lastOutput = { skipped: true, reason: 'upstream stage did not succeed' };
+        stage.lastDuration = 0;
+        stage.lastCredits = 0;
+        log('warn', stage, `⤼ ${stageRef(stage)} blocked — upstream stage did not succeed`);
+        renderPipeline();
+        return {
+          stageId: stage.id, name: stage.name, status: 'blocked',
+          context: { ctx_input: null, vars: varsToObject() }, response: null,
+          error: 'Upstream stage did not succeed', duration: 0, credits: 0, attempts: 0,
+        };
+      }
+      return executeStageParallel(stage, input, idx);
+    })();
+    return runMemo[stage.id];
+  }
+
+  // Kick off every stage; the memoized promises enforce the dependency order.
+  const results = await Promise.all(state.stages.map(s => runStageMemo(s)));
+
+  // ----- FINALLY: aggregate context + response of every stage -----
+  const collected = {};
+  let totalCredits = 0;
+  results.forEach(r => {
+    collected[r.stageId] = {
+      name: r.name,
+      status: r.status,
+      context: r.context,     // ctx.input the stage received (broadcast) + vars
+      response: r.response,   // task output
+      error: r.error,
+      duration: r.duration,
+      credits: r.credits,
+      attempts: r.attempts,
+    };
+    totalCredits += r.credits || 0;
+  });
+
+  const failed = results.filter(r => r.status !== 'success').length;
+  state.finalState.collected = collected;
+  state.finalState.lastDuration = Math.round(performance.now() - state.startTime);
+  state.finalState.lastCredits = totalCredits;
+  state.finalState.state = failed > 0 ? 'error' : 'success';
+
+  log('system', null, `⊕ Finally collected ${results.length} stage result(s) — ${results.length - failed} ok, ${failed} failed`);
+
+  document.getElementById('creditsUsed').textContent = totalCredits;
+  document.getElementById('totalDuration').textContent = state.finalState.lastDuration + 'ms';
+
+  if (failed > 0) {
+    setPipelineStatus('error');
+    log('warn', null, `═══ Job finished with partial results in ${state.finalState.lastDuration}ms — ${totalCredits} credits ═══`);
+  } else {
+    setPipelineStatus('success');
+    log('success', null, `═══ Job finished cleanly in ${state.finalState.lastDuration}ms — ${totalCredits} credits ═══`);
+  }
+
+  state.running = false;
+  renderPipeline();
+  // Auto-select Finally so the aggregated result is visible
+  if (!state.selectedStageId || state.selectedStageId === '__job__') {
+    state.selectedStageId = '__finally__';
+  }
+  renderInspector();
+}
+
+// Runs a single stage independently. Honors per-stage retries, then resolves
+// with a result record regardless of success/failure (failures are collected,
+// not thrown — "per-stage retries then continue").
+async function executeStageParallel(stage, payload, i) {
+  const broadcastInput = JSON.parse(JSON.stringify(payload));
+  stage.lastInput = broadcastInput;
+  stage.state = 'running';
+  renderPipeline();
+  log('info', stage, `▶ ${stageRef(stage)} starting (parallel) — input: <code>${escapeHtml(JSON.stringify(payload))}</code>`);
+
+  const stageStart = performance.now();
+  let stageCredits = 0;
+  let attempts = 0;
+
+  const baseContext = { ctx_input: broadcastInput, vars: varsToObject() };
+
+  try {
+    // ----- PRE-HANDLER -----
+    if (stage.pre.enabled) {
+      stage.sectionStates.pre = 'running';
+      stage.sectionStats.pre.input = payload;
+      renderPipeline();
+      await simulateAsync(150, 400);
+      const preResult = simulatePreHandler(stage, payload);
+      const preCredits = 1;
+      stageCredits += preCredits;
+      stage.sectionStats.pre.credits = preCredits;
+      stage.sectionStats.pre.output = { proceed: preResult };
+
+      state.audit.push({
+        stage: stage.name, stageId: stage.id, block: 'pre',
+        status: preResult ? 'success' : 'skipped',
+        input: baseContext, output: { proceed: preResult },
+        duration: null, credits: preCredits, startedAt: nowTimeStr(),
+      });
+
+      if (!preResult) {
+        stage.sectionStates.pre = 'skipped';
+        stage.sectionStates.task = 'skipped';
+        stage.sectionStates.post = 'skipped';
+        stage.state = 'skipped';
+        stage.lastDuration = Math.round(performance.now() - stageStart);
+        stage.lastCredits = stageCredits;
+        stage.lastOutput = { skipped: true, reason: 'pre-handler returned false' };
+        log('warn', { ...stage, block: 'pre' }, `⊢ ${stageRef(stage, 'pre')} returned false — stage skipped`);
+        renderPipeline();
+        return {
+          stageId: stage.id, name: stage.name, status: 'skipped',
+          context: baseContext, response: stage.lastOutput, error: null,
+          duration: stage.lastDuration, credits: stageCredits, attempts: 0,
+        };
+      }
+      stage.sectionStates.pre = 'success';
+      renderPipeline();
+    }
+
+    // ----- TASK (with per-stage retries) -----
+    stage.sectionStates.task = 'running';
+    stage.sectionStats.task.input = payload;
+    renderPipeline();
+    const maxRetries = Math.min(5, Math.max(0, Number(stage.maxRetries) || 0));
+    const maxAttempts = maxRetries + 1;
+    let taskResult, taskDur = 0, taskCredits = 0;
+    while (true) {
+      attempts++;
+      stage.sectionStats.task.attempts = attempts;
+      const taskStart = performance.now();
+      try {
+        await simulateAsync(400, 1100);
+        taskResult = simulateTask(stage, payload, i);
+        taskDur = Math.round(performance.now() - taskStart);
+        const thisCredits = 2 + Math.floor(Math.random() * 3);
+        taskCredits += thisCredits;
+        stageCredits += thisCredits;
+        break;
+      } catch (taskErr) {
+        const failCredits = 1;
+        taskCredits += failCredits;
+        stageCredits += failCredits;
+        if (attempts < maxAttempts) {
+          state.audit.push({
+            stage: stage.name, stageId: stage.id, block: 'task', status: 'retry',
+            input: payload, output: { error: taskErr.message },
+            duration: Math.round(performance.now() - taskStart), credits: failCredits,
+            attempt: attempts, maxAttempts, startedAt: nowTimeStr(),
+          });
+          log('warn', { ...stage, block: 'task' }, `↻ ${stageRef(stage, 'task')} failed (attempt ${attempts}/${maxAttempts}) — ${escapeHtml(taskErr.message)} — retrying…`);
+          await simulateAsync(200, 500);
+          continue;
+        }
+        // Exhausted retries — record error and CONTINUE (collected, not thrown)
+        taskErr.block = 'task';
+        throw taskErr;
+      }
+    }
+
+    stage.sectionStates.task = 'success';
+    stage.sectionStats.task.duration = taskDur;
+    stage.sectionStats.task.credits = taskCredits;
+    stage.sectionStats.task.output = taskResult;
+    stage.lastOutput = taskResult;
+
+    state.audit.push({
+      stage: stage.name, stageId: stage.id, block: 'task', status: 'success',
+      input: payload, output: taskResult, duration: taskDur, credits: taskCredits,
+      attempt: attempts, maxAttempts, startedAt: nowTimeStr(),
+    });
+
+    // ----- POST-HANDLER -----
+    if (stage.post.enabled) {
+      stage.sectionStates.post = 'running';
+      stage.sectionStats.post.input = taskResult;
+      renderPipeline();
+      await simulateAsync(100, 300);
+      const postCredits = 1;
+      stageCredits += postCredits;
+      stage.sectionStates.post = 'success';
+      stage.sectionStats.post.credits = postCredits;
+      stage.sectionStats.post.output = { committed: true };
+      state.audit.push({
+        stage: stage.name, stageId: stage.id, block: 'post', status: 'success',
+        input: taskResult, output: { committed: true }, duration: null,
+        credits: postCredits, startedAt: nowTimeStr(),
+      });
+    }
+
+    stage.state = 'success';
+    stage.lastDuration = Math.round(performance.now() - stageStart);
+    stage.lastCredits = stageCredits;
+    log('success', stage, `✓ ${stageRef(stage)} finished in ${stage.lastDuration}ms (${stageCredits} cr)`);
+    renderPipeline();
+
+    return {
+      stageId: stage.id, name: stage.name, status: 'success',
+      context: baseContext, response: taskResult, error: null,
+      duration: stage.lastDuration, credits: stageCredits, attempts,
+    };
+
+  } catch (err) {
+    const errBlock = err.block || 'task';
+    stage.state = 'error';
+    stage.sectionStates[errBlock] = 'error';
+    stage.sectionStats[errBlock].error = { message: err.message };
+    stage.lastDuration = Math.round(performance.now() - stageStart);
+    stage.lastCredits = stageCredits;
+    stage.lastErrorBlock = errBlock;
+    stage.lastError = {
+      message: err.message || String(err),
+      stack: err.stack || `at deluge.${errBlock} (stage: ${stage.name})`,
+      hint: err.hint || 'Inspect the broadcast input — required keys may be missing.',
+    };
+    stage.lastOutput = null;
+    log('error', { ...stage, block: errBlock }, `✗ ${stageRef(stage, errBlock)} — ${escapeHtml(err.message)} (continuing — other stages unaffected)`);
+    state.audit.push({
+      stage: stage.name, stageId: stage.id, block: errBlock, status: 'error',
+      input: payload, output: { error: err.message },
+      duration: stage.lastDuration, credits: stageCredits, startedAt: nowTimeStr(),
+    });
+    renderPipeline();
+
+    return {
+      stageId: stage.id, name: stage.name, status: 'error',
+      context: baseContext, response: null, error: err.message,
+      duration: stage.lastDuration, credits: stageCredits, attempts,
+    };
+  }
+}
+
 function setPipelineStatus(status) {
   const el = document.getElementById('pipelineStatus');
   const label = { idle: 'IDLE', running: 'RUNNING…', success: 'COMPLETED', error: 'FAILED' }[status];
@@ -1770,6 +3064,39 @@ document.getElementById('addVarBtn').addEventListener('click', () => {
 });
 
 document.getElementById('runBtn').addEventListener('click', runPipeline);
+document.getElementById('autoArrangeBtn')?.addEventListener('click', autoArrangeNodes);
+
+// Canvas zoom controls + shortcuts
+document.getElementById('zoomInBtn')?.addEventListener('click', () => adjustCanvasZoom(0.1));
+document.getElementById('zoomOutBtn')?.addEventListener('click', () => adjustCanvasZoom(-0.1));
+document.getElementById('zoomResetBtn')?.addEventListener('click', () => setCanvasZoom(1));
+document.addEventListener('keydown', (e) => {
+  const t = e.target;
+  if (t && (t.closest('input, textarea, select, [contenteditable="true"]'))) return;
+  if (!e.metaKey) return;
+  const k = e.key;
+  if (k === '+' || k === '=') {
+    e.preventDefault();
+    adjustCanvasZoom(0.1);
+  } else if (k === '-' || k === '_') {
+    e.preventDefault();
+    adjustCanvasZoom(-0.1);
+  } else if (k === '0') {
+    e.preventDefault();
+    setCanvasZoom(1);
+  }
+});
+
+// Keep native browser context menu only; do not allow any custom right-click actions.
+document.getElementById('pipelineFlow')?.addEventListener('contextmenu', (e) => {
+  e.stopPropagation();
+});
+
+// Redraw flow edges when the viewport changes
+window.addEventListener('resize', () => {
+  requestFlowEdgesRedraw();
+});
+
 document.getElementById('resetBtn').addEventListener('click', () => {
   state.stages.forEach(s => {
     s.state = 'idle';
@@ -1786,6 +3113,12 @@ document.getElementById('resetBtn').addEventListener('click', () => {
       post: { duration: null, credits: null, input: null, output: null, error: null },
     };
   });
+  state.jobNode.state = 'idle';
+  state.jobNode.lastPayload = null;
+  state.finalState.state = 'idle';
+  state.finalState.collected = null;
+  state.finalState.lastDuration = null;
+  state.finalState.lastCredits = null;
   state.logs = [];
   state.audit = [];
   setPipelineStatus('idle');
@@ -1821,6 +3154,7 @@ document.getElementById('consoleHeader').addEventListener('click', () => {
     w.classList.remove('collapsed'); w.classList.add('open');
     document.getElementById('consoleTitle').textContent = '▾ Console';
   }
+  requestFlowEdgesRedraw();
 });
 
 document.getElementById('clearLogsBtn').addEventListener('click', (e) => {
@@ -1841,6 +3175,7 @@ document.getElementById('clearLogsBtn').addEventListener('click', (e) => {
     state.inspectorWidth = w;
     main.style.setProperty('--insp-w', w + 'px');
     handle.style.right = w + 'px';
+    requestFlowEdgesRedraw();
     // Trigger monaco layout
     setTimeout(() => {
       Object.values(monacoEditors).forEach(ed => {
@@ -1884,6 +3219,7 @@ document.getElementById('clearLogsBtn').addEventListener('click', (e) => {
   function setWidth(w) {
     main.style.setProperty('--left-w', w + 'px');
     handle.style.left = w + 'px';
+    requestFlowEdgesRedraw();
     setTimeout(() => {
       Object.values(monacoEditors).forEach(ed => {
         try { ed.layout(); } catch(e) {}
@@ -1937,6 +3273,7 @@ document.getElementById('clearLogsBtn').addEventListener('click', (e) => {
     let h = winH - e.clientY;
     h = Math.max(MIN, Math.min(winH * MAX_RATIO, h));
     consoleWrap.style.setProperty('--console-h', h + 'px');
+    requestFlowEdgesRedraw();
   });
   window.addEventListener('mouseup', () => {
     if (!dragging) return;
@@ -1954,6 +3291,7 @@ function setPanelCollapsed(side, collapsed) {
   panel.classList.toggle('collapsed', collapsed);
   document.body.classList.toggle(side + '-collapsed', collapsed);
   if (collapsed) renderPanelStrip(side);
+  requestFlowEdgesRedraw();
 }
 
 function renderPanelStrip(side) {
@@ -2046,6 +3384,7 @@ function setZenMode(on) {
   const rp = document.getElementById('rightPanel');
   if (rp) rp.classList.toggle('edge-panel', on);
   if (!on) document.body.classList.remove('edge-open');
+  requestFlowEdgesRedraw();
   // Also drive the browser fullscreen API to use entire screen
   if (on) {
     const el = document.documentElement;
@@ -2127,6 +3466,7 @@ document.getElementById('fullscreenBtn').addEventListener('click', toggleFullscr
 document.addEventListener('fullscreenchange', () => {
   const inFs = !!document.fullscreenElement;
   document.body.classList.toggle('is-fullscreen', inFs);
+  requestFlowEdgesRedraw();
   // If user exits browser fullscreen (Esc / F11), also exit zen so state stays in sync
   if (!inFs && document.body.classList.contains('zen-mode')) {
     document.body.classList.remove('zen-mode', 'edge-open');
@@ -2228,6 +3568,9 @@ renderVars();
 renderTemplates();
 renderPipeline();
 renderInspector();
+setCanvasZoom(1);
+setPanelCollapsed('left', true);
+setPanelCollapsed('right', true);
 resetBaseline();
 log('system', null, 'Deluge Pipeline Builder ready. Click a stage to inspect, or hit Run Pipeline.');
 log('info',   null, `Loaded ${state.stages.length} stages, ${state.variables.length} variables.`);
