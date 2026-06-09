@@ -188,6 +188,22 @@
 }
 .stat-pill b { color: var(--accent); font-weight: 600; }
 
+.zoom-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+}
+.zoom-level {
+  min-width: 46px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: var(--fs-2xs);
+}
+
 .canvas {
   flex: 1;
   overflow: auto;
@@ -278,6 +294,31 @@
   font-weight: 600;
   font-size: var(--fs-base);
   color: var(--text);
+}
+.stage-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.stage-name-edit {
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+}
+.stage-name-edit:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 .stage-desc {
   font-size: var(--fs-xs);
@@ -1447,3 +1488,282 @@ body.zen-mode .zen-exit, body.zen-mode .zen-run { display: inline-flex; }
 .zen-exit .icon-svg, .zen-run .icon-svg { width: 1em; height: 1em; }
 body.zen-mode .zen-exit, body.zen-mode .zen-run { display: flex; }
 body.zen-mode .zen-run.running { opacity: 1; background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+
+/* ============== EXECUTION MODE TOGGLE ============== */
+.mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-left: 8px;
+}
+.mode-toggle .mode-opt {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.5px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.mode-toggle .mode-opt + .mode-opt { border-left: 1px solid var(--border); }
+.mode-toggle .mode-opt:hover { color: var(--text); }
+.mode-toggle .mode-opt.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+/* ============== PARALLEL TOPOLOGY (fan-out / fan-in) ============== */
+.pipeline-flow.parallel { align-items: center; }
+.fanout-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4, 16px);
+  position: static;
+  padding: 4px 0;
+}
+.fanout-group::before {
+  /* vertical bus line tying the parallel branches together */
+  content: '';
+  position: absolute;
+  left: -20px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+.fanout-empty {
+  width: 280px;
+  padding: 20px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+.add-stage-btn.fanout-add {
+  min-height: 56px;
+  width: 280px;
+  padding: 10px;
+}
+.pipeline-flow.parallel .add-stage-btn.fanout-add { align-self: stretch; }
+
+/* Job + Finally nodes reuse stage-card but get accent framing */
+.stage-card.job-node { border-color: var(--running); }
+.stage-card.finally-node { border-color: var(--accent); }
+.stage-card.job-node.idle, .stage-card.finally-node.idle { opacity: 0.92; }
+.stage-card.finally-node.error { border-color: var(--error); }
+
+/* ============== FINALLY / JOB INSPECTOR ============== */
+.finally-head { margin-bottom: 12px; }
+.finally-head-title {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+}
+.finally-head-sub {
+  font-size: var(--fs-2xs);
+  color: var(--text-dim);
+  margin-top: 3px;
+}
+.io-box {
+  background: var(--bg-elev);
+  padding: 8px;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  overflow: auto;
+  white-space: pre;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  max-height: 200px;
+}
+.io-box-sm { max-height: 120px; font-size: var(--fs-3xs); }
+.io-box-sm.err-text { color: var(--error); white-space: pre-wrap; }
+
+.fin-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.fin-stat {
+  flex: 1;
+  min-width: 64px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  text-align: center;
+}
+.fin-stat-label {
+  display: block;
+  font-size: var(--fs-3xs);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+}
+.fin-stat b { font-size: var(--fs-sm); color: var(--text); }
+.fin-stat.ok b { color: var(--accent); }
+.fin-stat.err b { color: var(--error); }
+
+.fin-entry {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 4px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: var(--bg-elev);
+}
+.fin-entry.success { border-left-color: var(--accent); }
+.fin-entry.error { border-left-color: var(--error); }
+.fin-entry.skipped { border-left-color: var(--warn); opacity: 0.8; }
+.fin-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.fin-entry-name { font-weight: 600; font-size: var(--fs-xs); color: var(--text); }
+.fin-entry-meta { margin-left: auto; font-size: var(--fs-3xs); color: var(--text-dim); }
+.fin-badge {
+  font-size: var(--fs-3xs);
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.fin-badge.ok { background: var(--accent-soft); color: var(--accent); }
+.fin-badge.err { background: rgba(220,60,60,0.15); color: var(--error); }
+.fin-sub {
+  font-size: var(--fs-3xs);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  margin: 8px 0 4px;
+}
+.fin-entry.blocked { border-left-color: var(--warn); opacity: 0.85; }
+.fin-badge.blocked { background: rgba(200,160,40,0.15); color: var(--warn); }
+.flow-badge {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: var(--fs-3xs);
+  padding: 2px 7px;
+  border-radius: 3px;
+  letter-spacing: 0.3px;
+  border: 1px solid var(--border);
+}
+.flow-badge.after { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-soft); }
+.flow-badge.branch { color: var(--running); border-color: var(--border); }
+.flow-select { display: flex; flex-direction: column; gap: 6px; }
+.flow-radio {
+  display: flex; align-items: flex-start; gap: 8px;
+  border: 1px solid var(--border); border-radius: 5px;
+  padding: 8px 10px; cursor: pointer; transition: all 0.15s;
+}
+.flow-radio:hover { border-color: var(--accent); }
+.flow-radio.sel { border-color: var(--accent); background: var(--accent-soft); }
+.flow-radio input { margin-top: 3px; }
+.flow-radio span { display: flex; flex-direction: column; }
+.flow-radio b { font-size: var(--fs-xs); color: var(--text); }
+.flow-radio small { font-size: var(--fs-3xs); color: var(--text-dim); margin-top: 2px; }
+
+/* ============== FLOW EDGES (parallel/hybrid canvas) ============== */
+.pipeline-flow.parallel { position: relative; gap: 72px; align-items: center; }
+.pipeline-flow.parallel .fanout-group::before { display: none; } /* drop the old vertical bus */
+/* NOTE: do NOT position .fanout-group — cards must keep pipeline-flow as their
+   offsetParent so drawFlowEdges() measures absolute positions correctly. */
+.pipeline-flow.parallel .stage-card,
+.pipeline-flow.parallel .job-node,
+.pipeline-flow.parallel .finally-node { position: relative; z-index: 1; }
+.pipeline-flow.parallel .fanout-group { z-index: 1; }
+.pipeline-flow.parallel.free-layout {
+  display: block;
+  min-height: 520px;
+}
+.pipeline-flow.parallel.free-layout .stage-card,
+.pipeline-flow.parallel.free-layout .job-node,
+.pipeline-flow.parallel.free-layout .finally-node {
+  position: absolute;
+  z-index: 2;
+}
+.pipeline-flow.parallel.free-layout .draggable-node { cursor: grab; }
+.pipeline-flow.parallel.free-layout .draggable-node.dragging {
+  cursor: grabbing;
+  filter: drop-shadow(0 8px 22px rgba(0,0,0,0.35));
+}
+.flow-edges {
+  position: absolute;
+  top: 0; left: 0;
+  z-index: 0;
+  pointer-events: auto;
+  overflow: visible;
+}
+.wire-add-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+.wire-add-btn {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  background: var(--bg-elev);
+  border: 1px dashed var(--border);
+  color: var(--text-dim);
+  border-radius: 999px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+.wire-add-btn.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.wire-add-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+  transform: translate(-50%, -50%) scale(1.06);
+}
+.flow-edge { stroke: var(--border); stroke-width: 2; opacity: 0.9; }
+.flow-edge { pointer-events: stroke; }
+.flow-edge.after  { stroke: #4fa3ff; stroke-width: 2.2; stroke-dasharray: 2 6; }
+.flow-edge.branch { stroke: #f7d24b; stroke-width: 2.2; stroke-dasharray: 2 6; }
+.flow-edge.branch.from-job { stroke-width: 2.4; stroke-dasharray: 2 6; }
+.flow-edge.join   { stroke: #4fa3ff; stroke-width: 2.1; stroke-dasharray: 2 6; opacity: 0.9; }
+.flow-edge.active { stroke: var(--accent); opacity: 1; }
+.flow-edge.err    { stroke: var(--error); }
+.flow-edge.muted  { opacity: 0.35; }
+.edge-arrow-after  { fill: #4fa3ff; }
+.edge-arrow-branch { fill: #f7d24b; }
+.edge-arrow-join   { fill: #4fa3ff; }
+
+/* ============== FLOW CHOICE MODAL + CLICKABLE CHIP ============== */
+.flow-choice-cards { display: flex; gap: 12px; margin-top: 14px; }
+.flow-choice-card {
+  flex: 1;
+  text-align: left;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.flow-choice-card:hover { border-color: var(--accent); background: var(--accent-soft); }
+.flow-choice-card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.flow-choice-card .fcc-icon { font-size: 22px; color: var(--accent); }
+.flow-choice-card .fcc-title { font-weight: 700; font-size: var(--fs-sm); margin: 6px 0 4px; color: var(--text); }
+.flow-choice-card .fcc-desc { font-size: var(--fs-2xs); color: var(--text-dim); line-height: 1.5; }
+
+/* Flow chip is now a button */
+button.flow-badge { cursor: pointer; font-family: inherit; }
+button.flow-badge:hover { filter: brightness(1.15); border-color: var(--accent); }
+.flow-edit { opacity: 0.6; margin-left: 3px; font-size: 0.9em; }
